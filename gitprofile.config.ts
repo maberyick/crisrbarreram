@@ -2,14 +2,14 @@
 
 const CONFIG = {
   github: {
-    username: 'maberyick', // Your GitHub org/user name. (This is the only required config)
+    username: 'arifszn', // Your GitHub org/user name. (This is the only required config)
   },
   /**
    * If you are deploying to https://<USERNAME>.github.io/, for example your repository is at https://github.com/arifszn/arifszn.github.io, set base to '/'.
    * If you are deploying to https://<USERNAME>.github.io/<REPO_NAME>/,
    * for example your repository is at https://github.com/arifszn/portfolio, then set base to '/portfolio/'.
    */
-  base: '/',
+  base: '/gitprofile/',
   projects: {
     github: {
       display: true, // Display GitHub projects?
@@ -25,7 +25,7 @@ const CONFIG = {
       },
       manual: {
         // Properties for manually specifying projects
-        projects: ['maberyick/gitprofile', 'maberyick/pandora'], // List of repository names to display. example: ['arifszn/my-project1', 'arifszn/my-project2']
+        projects: ['arifszn/gitprofile', 'arifszn/pandora'], // List of repository names to display. example: ['arifszn/my-project1', 'arifszn/my-project2']
       },
     },
     external: {
@@ -159,7 +159,7 @@ const CONFIG = {
     limit: 2, // How many articles to display. Max is 10.
   },
   googleAnalytics: {
-    id: 'G-SXTG9899GN', // GA3 tracking id/GA4 tag id UA-XXXXXXXXX-X | G-XXXXXXXXXX
+    id: '', // GA3 tracking id/GA4 tag id UA-XXXXXXXXX-X | G-XXXXXXXXXX
   },
   // Track visitor interaction and behavior. https://www.hotjar.com
   hotjar: { id: '', snippetVersion: 6 },
