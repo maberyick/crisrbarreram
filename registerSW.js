@@ -1,1 +1,1 @@
-if('serviceWorker' in navigator) {window.addEventListener('load', () => {navigator.serviceWorker.register('/crisrbarreram/sw.js', { scope: '/crisrbarreram/' })})}
+if('serviceWorker' in navigator) {window.addEventListener('load', () => {navigator.serviceWorker.register('/gitprofile/sw.js', { scope: '/gitprofile/' })})}
