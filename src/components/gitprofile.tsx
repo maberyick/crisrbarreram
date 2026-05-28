@@ -29,6 +29,7 @@ import BlogCard from './blog-card';
 import Footer from './footer';
 import PublicationCard from './publication-card';
 import HeroImpactCard from './hero-impact-card';
+import QuickLinksBar from './quick-links-bar';
 
 /**
  * Renders the GitProfile component.
@@ -188,7 +189,7 @@ const GitProfile = ({ config }: { config: Config }) => {
         />
       ) : (
         <>
-          <div className={`p-4 lg:p-10 min-h-full ${BG_COLOR}`}>
+          <div className={`p-4 lg:p-10 min-h-full ambient-shell ${BG_COLOR}`}>
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 rounded-box">
               <div className="col-span-1">
                 <div className="grid grid-cols-1 gap-6">
@@ -280,6 +281,12 @@ const GitProfile = ({ config }: { config: Config }) => {
               </div>
             </div>
           </div>
+          <QuickLinksBar
+            githubUsername={sanitizedConfig.github.username}
+            linkedin={sanitizedConfig.social.linkedin}
+            resumeUrl={sanitizedConfig.resume.fileUrl}
+            googleAnalyticsId={sanitizedConfig.googleAnalytics.id}
+          />
           {sanitizedConfig.footer && (
             <footer
               className={`p-4 footer ${BG_COLOR} text-base-content footer-center`}

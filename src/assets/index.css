@@ -84,6 +84,76 @@ body {
     linear-gradient(145deg, rgba(255, 255, 255, 0.82), rgba(240, 241, 249, 0.75));
 }
 
+.ambient-shell {
+  position: relative;
+  overflow: hidden;
+}
+
+.ambient-shell::before {
+  content: '';
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 0;
+  background:
+    radial-gradient(circle at 8% 12%, rgba(252, 5, 91, 0.18), transparent 35%),
+    radial-gradient(circle at 92% 84%, rgba(33, 154, 175, 0.18), transparent 34%),
+    linear-gradient(180deg, rgba(255, 255, 255, 0.3), rgba(227, 227, 237, 0.2));
+  animation: ambientPulse 9s ease-in-out infinite alternate;
+}
+
+.ambient-shell::after {
+  content: '';
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 0;
+  background-image:
+    linear-gradient(rgba(42, 39, 48, 0.035) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(42, 39, 48, 0.035) 1px, transparent 1px);
+  background-size: 36px 36px;
+  mask-image: radial-gradient(circle at center, black 40%, transparent 90%);
+}
+
+.ambient-shell > * {
+  position: relative;
+  z-index: 1;
+}
+
+.quick-links-wrap {
+  width: min(92vw, 460px);
+}
+
+.quick-links-inner {
+  display: flex;
+  justify-content: center;
+  gap: 0.5rem;
+  padding: 0.45rem;
+  border-radius: 999px;
+  border: 1px solid rgba(42, 39, 48, 0.15);
+  background: rgba(255, 255, 255, 0.7);
+  backdrop-filter: blur(10px);
+  box-shadow: 0 14px 30px rgba(42, 39, 48, 0.12);
+}
+
+.quick-link-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  border-radius: 999px;
+  padding: 0.45rem 0.75rem;
+  color: #2a2730;
+  font-size: 0.75rem;
+  font-weight: 700;
+  letter-spacing: 0.03em;
+  transition: all 0.2s ease;
+}
+
+.quick-link-item:hover {
+  background: rgba(252, 5, 91, 0.1);
+  color: #fc055b;
+}
+
 .hero-impact-pill {
   color: #7f1840;
   border: 1px solid rgba(252, 5, 91, 0.25);
@@ -151,6 +221,17 @@ svg {
   }
   100% {
     opacity: 1;
+  }
+}
+
+@keyframes ambientPulse {
+  0% {
+    filter: saturate(100%);
+    transform: translate3d(0, 0, 0);
+  }
+  100% {
+    filter: saturate(112%);
+    transform: translate3d(0, -8px, 0);
   }
 }
 
