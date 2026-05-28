@@ -15,6 +15,7 @@ export default defineConfig({
           metaTitle: CONFIG.seo.title,
           metaDescription: CONFIG.seo.description,
           metaImageURL: CONFIG.seo.imageURL,
+          metaCanonicalURL: CONFIG.social.website || 'https://crisbarrera.com',
           googleAnalyticsScript: CONFIG.googleAnalytics.id
             ? `<!-- Global site tag (gtag.js) - Google Analytics -->
 <script async src="https://www.googletagmanager.com/gtag/js?id=${CONFIG.googleAnalytics.id}"></script>
@@ -37,9 +38,11 @@ export default defineConfig({
             },
             includeAssets: ['logo.png'],
             manifest: {
-              name: 'Portfolio',
-              short_name: 'Portfolio',
-              description: 'Personal Portfolio',
+              name: CONFIG.seo.title,
+              short_name: 'Cris Barrera',
+              description: CONFIG.seo.description,
+              start_url: '/',
+              scope: '/',
               icons: [
                 {
                   src: 'logo.png',

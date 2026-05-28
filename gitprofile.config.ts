@@ -13,8 +13,8 @@ const CONFIG = {
   projects: {
     github: {
       display: true, // Display GitHub projects?
-      header: 'Github Projects',
-      mode: 'automatic', // Mode can be: 'automatic' or 'manual'
+      header: 'Selected Open-Source Projects',
+      mode: 'manual', // Mode can be: 'automatic' or 'manual'
       automatic: {
         sortBy: 'stars', // Sort projects by 'stars' or 'updated'
         limit: 8, // How many projects to display.
@@ -25,34 +25,49 @@ const CONFIG = {
       },
       manual: {
         // Properties for manually specifying projects
-        projects: [], // List of repository names to display. example: ['user/my-project1', 'user/my-project2']
+        projects: [
+          'maberyick/bartek',
+          'maberyick/crisrbarreram',
+          'maberyick/HistoTIL',
+          'maberyick/PhenoTIL',
+          'maberyick/nucleiSegmentationHEDL',
+          'maberyick/Pytorch-UNet',
+        ], // List of repository names to display. example: ['user/my-project1', 'user/my-project2']
       },
     },
     external: {
-      header: 'My Projects',
+      header: 'Featured Production Work',
       // To hide the `External Projects` section, keep it empty.
       projects: [
         {
-          title: 'Distributed OCT Foundation Model Pipeline',
+          title: 'BARTEK LLC AI Platform',
           description:
-            'End-to-end pipeline training foundation models on 2M+ unlabeled and 600k labeled OCT volumes across 20+ GPUs and 10+ machines with Podman, Redis, MLflow, and Flask orchestration.',
-          imageUrl: '',
-          link: 'https://crisbarrera.com',
+            'Full-stack AI platform and business-facing website work spanning architecture, deployment, and UX decisions for production usage.',
+          imageUrl: '/logo192.png',
+          link: 'https://github.com/maberyick/bartek',
         },
         {
-          title: 'AI Agent Reader for Quality Control',
+          title: 'Personal Portfolio Infrastructure',
           description:
-            'Vision- and language-model agent to verify, correct, and summarize workflow outputs before QC review; integrated into containerized pipelines with automated logging.',
-          imageUrl: '',
-          link: 'https://crisbarrera.com',
+            'Modern Vite + React portfolio with CI/CD on GitHub Pages, SEO hardening, PWA support, and continuous profile updates.',
+          imageUrl: '/logo192.png',
+          link: 'https://github.com/maberyick/crisrbarreram',
+        },
+        {
+          title: 'Computational Pathology Toolkit',
+          description:
+            'Research-to-production code for histopathology analysis pipelines, including cell phenotyping and segmentation workflows.',
+          imageUrl: '/logo192.png',
+          link: 'https://github.com/maberyick/HistoTIL',
         },
       ],
     },
   },
   seo: {
     title: 'Portfolio of Cristian Barrera',
-    description: 'Portfolio of Cristian Barrera',
-    imageURL: '',
+    description:
+      'Cristian Barrera, PhD. Software Developer II in medical imaging and AI, building distributed foundation model pipelines and production ML systems.',
+    imageURL: 'https://crisbarrera.com/logo512.png',
   },
   social: {
     linkedin: 'cristian-barrera-63205997',
@@ -188,39 +203,10 @@ const CONFIG = {
     themes: [
       'light',
       'dark',
-      'cupcake',
-      'bumblebee',
-      'emerald',
       'corporate',
-      'synthwave',
-      'retro',
-      'cyberpunk',
-      'valentine',
-      'halloween',
-      'garden',
-      'forest',
-      'aqua',
       'lofi',
-      'pastel',
-      'fantasy',
-      'wireframe',
-      'black',
-      'luxury',
-      'dracula',
-      'cmyk',
-      'autumn',
-      'business',
-      'acid',
-      'lemonade',
-      'night',
       'coffee',
       'winter',
-      'dim',
-      'nord',
-      'sunset',
-      'caramellatte',
-      'abyss',
-      'silk',
       'procyon',
     ],
   },
