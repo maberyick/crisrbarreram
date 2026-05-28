@@ -118,8 +118,8 @@ const CONFIG = {
   experiences: [
     {
       company: 'Cleveland Clinic',
-      position: 'Software Developer II (Medical Imaging)',
-      from: 'Nov 2024',
+      position: 'Data Scientist III',
+      from: 'Mar 2026',
       to: 'Present',
       companyLink: 'https://my.clevelandclinic.org',
     },

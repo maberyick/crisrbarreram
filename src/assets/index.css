@@ -12,12 +12,12 @@
   --color-base-200: #d1d1db;
   --color-base-300: #bfbfc9;
   --color-base-content: #2a2730;
-  --color-primary: #fc055b;
+  --color-primary: #1d4ed8;
   --color-primary-content: #ffffff;
-  --color-secondary: #219aaf;
+  --color-secondary: #0ea5e9;
   --color-secondary-content: #ffffff;
-  --color-accent: #e8d03a;
-  --color-accent-content: #2a2730;
+  --color-accent: #93c5fd;
+  --color-accent-content: #0f172a;
   --color-neutral: #2a2730;
   --color-neutral-content: #ffffff;
   --color-info: #219aaf;
@@ -79,9 +79,9 @@ body {
 
 .hero-impact-card {
   background:
-    radial-gradient(circle at 14% 18%, rgba(252, 5, 91, 0.16), transparent 42%),
-    radial-gradient(circle at 88% 90%, rgba(33, 154, 175, 0.15), transparent 38%),
-    linear-gradient(145deg, rgba(255, 255, 255, 0.82), rgba(240, 241, 249, 0.75));
+    radial-gradient(circle at 14% 18%, rgba(29, 78, 216, 0.16), transparent 42%),
+    radial-gradient(circle at 88% 90%, rgba(14, 165, 233, 0.15), transparent 38%),
+    linear-gradient(145deg, rgba(255, 255, 255, 0.82), rgba(235, 241, 255, 0.75));
 }
 
 .ambient-shell {
@@ -97,8 +97,8 @@ body {
   pointer-events: none;
   z-index: 0;
   background:
-    radial-gradient(circle at 8% 12%, rgba(252, 5, 91, 0.18), transparent 35%),
-    radial-gradient(circle at 92% 84%, rgba(33, 154, 175, 0.18), transparent 34%),
+    radial-gradient(circle at 8% 12%, rgba(29, 78, 216, 0.18), transparent 35%),
+    radial-gradient(circle at 92% 84%, rgba(14, 165, 233, 0.18), transparent 34%),
     linear-gradient(180deg, rgba(255, 255, 255, 0.3), rgba(227, 227, 237, 0.2));
   animation: ambientPulse 9s ease-in-out infinite alternate;
 }
@@ -129,10 +129,10 @@ body {
   background:
     conic-gradient(
       from 90deg at 20% 25%,
-      rgba(252, 5, 91, 0.09),
-      rgba(33, 154, 175, 0.07),
-      rgba(232, 208, 58, 0.06),
-      rgba(252, 5, 91, 0.09)
+      rgba(29, 78, 216, 0.09),
+      rgba(14, 165, 233, 0.07),
+      rgba(147, 197, 253, 0.06),
+      rgba(29, 78, 216, 0.09)
     );
   opacity: 0.75;
   transform: rotateX(12deg) rotateY(-8deg) scale(1.05);
@@ -187,8 +187,8 @@ body {
 }
 
 .quick-link-item:hover {
-  background: rgba(252, 5, 91, 0.1);
-  color: #fc055b;
+  background: rgba(29, 78, 216, 0.1);
+  color: #1d4ed8;
 }
 
 .timeline-list {
@@ -205,7 +205,7 @@ body {
   border-radius: 999px;
   background: linear-gradient(
     180deg,
-    rgba(252, 5, 91, 0.35) 0%,
+    rgba(29, 78, 216, 0.35) 0%,
     rgba(42, 39, 48, 0.12) 60%,
     rgba(42, 39, 48, 0.08) 100%
   );
@@ -229,30 +229,30 @@ body {
 }
 
 .timeline-item-btn.is-active {
-  box-shadow: 0 8px 22px rgba(252, 5, 91, 0.08);
+  box-shadow: 0 8px 22px rgba(29, 78, 216, 0.08);
 }
 
 .timeline-item-btn.is-active .timeline-marker {
-  border-color: rgba(252, 5, 91, 0.75);
-  background: #fc055b;
-  box-shadow: 0 0 0 5px rgba(252, 5, 91, 0.15);
+  border-color: rgba(29, 78, 216, 0.75);
+  background: #1d4ed8;
+  box-shadow: 0 0 0 5px rgba(29, 78, 216, 0.15);
   animation: timelinePulse 1.6s ease-in-out infinite;
 }
 
 .hero-impact-pill {
-  color: #7f1840;
-  border: 1px solid rgba(252, 5, 91, 0.25);
+  color: #0f3b8f;
+  border: 1px solid rgba(29, 78, 216, 0.25);
   border-radius: 999px;
   padding: 0.35rem 0.8rem;
-  background: rgba(252, 5, 91, 0.06);
+  background: rgba(29, 78, 216, 0.06);
 }
 
 .hero-impact-dot {
   width: 0.45rem;
   height: 0.45rem;
   border-radius: 999px;
-  background: #fc055b;
-  box-shadow: 0 0 0 6px rgba(252, 5, 91, 0.16);
+  background: #1d4ed8;
+  box-shadow: 0 0 0 6px rgba(29, 78, 216, 0.16);
 }
 
 .hero-impact-stat {

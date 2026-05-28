@@ -54,7 +54,7 @@ const structuredData = {
       sameAs,
       email: CONFIG.social.email || '',
       telephone: CONFIG.social.phone || '',
-      jobTitle: 'Software Developer II (Medical Imaging)',
+      jobTitle: 'Data Scientist III',
       worksFor,
       alumniOf,
       knowsAbout,
