@@ -191,6 +191,54 @@ body {
   color: #fc055b;
 }
 
+.timeline-list {
+  position: relative;
+}
+
+.timeline-list::before {
+  content: '';
+  position: absolute;
+  left: 0.92rem;
+  top: 0.7rem;
+  bottom: 0.7rem;
+  width: 2px;
+  border-radius: 999px;
+  background: linear-gradient(
+    180deg,
+    rgba(252, 5, 91, 0.35) 0%,
+    rgba(42, 39, 48, 0.12) 60%,
+    rgba(42, 39, 48, 0.08) 100%
+  );
+}
+
+.timeline-item-btn {
+  position: relative;
+  padding-left: 2.1rem;
+}
+
+.timeline-marker {
+  position: absolute;
+  left: 0.58rem;
+  top: 0.95rem;
+  width: 0.72rem;
+  height: 0.72rem;
+  border-radius: 999px;
+  border: 2px solid rgba(42, 39, 48, 0.35);
+  background: rgba(255, 255, 255, 0.95);
+  transition: all 0.25s ease;
+}
+
+.timeline-item-btn.is-active {
+  box-shadow: 0 8px 22px rgba(252, 5, 91, 0.08);
+}
+
+.timeline-item-btn.is-active .timeline-marker {
+  border-color: rgba(252, 5, 91, 0.75);
+  background: #fc055b;
+  box-shadow: 0 0 0 5px rgba(252, 5, 91, 0.15);
+  animation: timelinePulse 1.6s ease-in-out infinite;
+}
+
 .hero-impact-pill {
   color: #7f1840;
   border: 1px solid rgba(252, 5, 91, 0.25);
@@ -290,10 +338,21 @@ svg {
   }
 }
 
+@keyframes timelinePulse {
+  0%,
+  100% {
+    transform: scale(1);
+  }
+  50% {
+    transform: scale(1.12);
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
   .ambient-mesh-layer,
   .ambient-mesh-layer::before,
-  .ambient-shell::before {
+  .ambient-shell::before,
+  .timeline-item-btn.is-active .timeline-marker {
     animation: none !important;
   }
 }

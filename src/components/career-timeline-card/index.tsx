@@ -79,7 +79,7 @@ const CareerTimelineCard = ({
             renderLoading()
           ) : (
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
-              <div className="lg:col-span-1 space-y-2">
+              <div className="lg:col-span-1 space-y-2 timeline-list">
                 {safeExperiences.map((item, idx) => {
                   const isActive = idx === activeIndex;
                   return (
@@ -87,12 +87,13 @@ const CareerTimelineCard = ({
                       key={`${item.company}-${item.position}-${idx}`}
                       type="button"
                       onClick={() => setActiveIndex(idx)}
-                      className={`w-full text-left rounded-xl border p-3 transition-all ${
+                      className={`w-full text-left rounded-xl border p-3 timeline-item-btn transition-all ${
                         isActive
-                          ? 'border-primary bg-primary/10'
+                          ? 'border-primary bg-primary/10 is-active'
                           : 'border-base-300 bg-base-100 hover:border-primary/40'
                       }`}
                     >
+                      <span className="timeline-marker" aria-hidden="true" />
                       <div className="text-xs font-semibold tracking-wide uppercase text-base-content/60">
                         {getYear(item.from)} - {item.to.toLowerCase() === 'present' ? 'Now' : getYear(item.to)}
                       </div>
