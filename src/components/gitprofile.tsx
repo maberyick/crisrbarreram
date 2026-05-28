@@ -204,12 +204,14 @@ const GitProfile = ({ config }: { config: Config }) => {
                     loading={loading}
                     avatarRing={sanitizedConfig.themeConfig.displayAvatarRing}
                     resumeFileUrl={sanitizedConfig.resume.fileUrl}
+                    googleAnalyticsId={sanitizedConfig.googleAnalytics.id}
                   />
                   <DetailsCard
                     profile={profile}
                     loading={loading}
                     github={sanitizedConfig.github}
                     social={sanitizedConfig.social}
+                    googleAnalyticsId={sanitizedConfig.googleAnalytics.id}
                   />
                   {sanitizedConfig.skills.length !== 0 && (
                     <SkillCard
@@ -252,6 +254,7 @@ const GitProfile = ({ config }: { config: Config }) => {
                     <PublicationCard
                       loading={loading}
                       publications={sanitizedConfig.publications}
+                      googleAnalyticsId={sanitizedConfig.googleAnalytics.id}
                     />
                   )}
                   {sanitizedConfig.projects.external.projects.length !== 0 && (

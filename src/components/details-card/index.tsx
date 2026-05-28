@@ -27,13 +27,14 @@ import {
   SanitizedGithub,
   SanitizedSocial,
 } from '../../interfaces/sanitized-config';
-import { skeleton } from '../../utils';
+import { ga, skeleton } from '../../utils';
 
 type Props = {
   profile: Profile | null;
   loading: boolean;
   social: SanitizedSocial;
   github: SanitizedGithub;
+  googleAnalyticsId?: string;
 };
 
 const isCompanyMention = (company: string): boolean => {
@@ -63,7 +64,8 @@ const ListItem: React.FC<{
   value: React.ReactNode;
   link?: string;
   skeleton?: boolean;
-}> = ({ icon, title, value, link, skeleton = false }) => {
+  onClick?: () => void;
+}> = ({ icon, title, value, link, skeleton = false, onClick }) => {
   return (
     <div className="flex justify-start py-2 px-1 items-center">
       <div className="grow font-medium gap-2 flex items-center my-1">
@@ -82,6 +84,7 @@ const ListItem: React.FC<{
           target="_blank"
           rel="noreferrer"
           className="flex justify-start py-2 px-1 items-center"
+          onClick={onClick}
         >
           {value}
         </a>
@@ -150,7 +153,26 @@ const OrganizationItem: React.FC<{
  * @param {Object} github - The GitHub object.
  * @return {JSX.Element} The details card component.
  */
-const DetailsCard = ({ profile, loading, social, github }: Props) => {
+const DetailsCard = ({
+  profile,
+  loading,
+  social,
+  github,
+  googleAnalyticsId,
+}: Props) => {
+  const trackOutbound = (itemId: string): void => {
+    try {
+      if (googleAnalyticsId) {
+        ga.event('select_content', {
+          content_type: 'contact_link',
+          item_id: itemId,
+        });
+      }
+    } catch (error) {
+      console.error(error);
+    }
+  };
+
   const renderSkeleton = () => {
     const array = [];
     for (let index = 0; index < 4; index++) {
@@ -200,6 +222,7 @@ const DetailsCard = ({ profile, loading, social, github }: Props) => {
                 title="GitHub:"
                 value={github.username}
                 link={`https://github.com/${github.username}`}
+                onClick={() => trackOutbound('github')}
               />
               {social?.researchGate && (
                 <ListItem
@@ -207,6 +230,7 @@ const DetailsCard = ({ profile, loading, social, github }: Props) => {
                   title="ResearchGate:"
                   value={social.researchGate}
                   link={`https://www.researchgate.net/profile/${social.researchGate}`}
+                  onClick={() => trackOutbound('researchgate')}
                 />
               )}
               {social?.x && (
@@ -215,6 +239,7 @@ const DetailsCard = ({ profile, loading, social, github }: Props) => {
                   title="X:"
                   value={social.x}
                   link={`https://x.com/${social.x}`}
+                  onClick={() => trackOutbound('x')}
                 />
               )}
               {social?.mastodon && (
@@ -223,6 +248,7 @@ const DetailsCard = ({ profile, loading, social, github }: Props) => {
                   title="Mastodon:"
                   value={getFormattedMastodonValue(social.mastodon, false)}
                   link={getFormattedMastodonValue(social.mastodon, true)}
+                  onClick={() => trackOutbound('mastodon')}
                 />
               )}
               {social?.linkedin && (
@@ -231,6 +257,7 @@ const DetailsCard = ({ profile, loading, social, github }: Props) => {
                   title="LinkedIn:"
                   value={social.linkedin}
                   link={`https://www.linkedin.com/in/${social.linkedin}`}
+                  onClick={() => trackOutbound('linkedin')}
                 />
               )}
               {social?.dribbble && (
@@ -333,6 +360,7 @@ const DetailsCard = ({ profile, loading, social, github }: Props) => {
                       ? `http://${social.website}`
                       : social.website
                   }
+                  onClick={() => trackOutbound('website')}
                 />
               )}
               {social?.telegram && (
@@ -341,6 +369,7 @@ const DetailsCard = ({ profile, loading, social, github }: Props) => {
                   title="Telegram"
                   value={social.telegram}
                   link={`https://t.me/${social.telegram}`}
+                  onClick={() => trackOutbound('telegram')}
                 />
               )}
               {social?.phone && (
@@ -349,6 +378,7 @@ const DetailsCard = ({ profile, loading, social, github }: Props) => {
                   title="Phone:"
                   value={social.phone}
                   link={`tel:${social.phone}`}
+                  onClick={() => trackOutbound('phone')}
                 />
               )}
               {social?.email && (
@@ -357,6 +387,7 @@ const DetailsCard = ({ profile, loading, social, github }: Props) => {
                   title="Email:"
                   value={social.email}
                   link={`mailto:${social.email}`}
+                  onClick={() => trackOutbound('email')}
                 />
               )}
               {social?.discord && (

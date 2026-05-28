@@ -1,6 +1,6 @@
 import { FALLBACK_IMAGE } from '../../constants';
 import { Profile } from '../../interfaces/profile';
-import { skeleton } from '../../utils';
+import { ga, skeleton } from '../../utils';
 import LazyImage from '../lazy-image';
 
 interface AvatarCardProps {
@@ -8,6 +8,7 @@ interface AvatarCardProps {
   loading: boolean;
   avatarRing: boolean;
   resumeFileUrl?: string;
+  googleAnalyticsId?: string;
 }
 
 /**
@@ -23,6 +24,7 @@ const AvatarCard: React.FC<AvatarCardProps> = ({
   loading,
   avatarRing,
   resumeFileUrl,
+  googleAnalyticsId,
 }): React.JSX.Element => {
   return (
     <div className="card shadow-lg card-sm bg-base-100">
@@ -88,6 +90,18 @@ const AvatarCard: React.FC<AvatarCardProps> = ({
               className="btn btn-outline btn-sm text-xs mt-6 opacity-50"
               download
               rel="noreferrer"
+              onClick={() => {
+                try {
+                  if (googleAnalyticsId) {
+                    ga.event('select_content', {
+                      content_type: 'resume',
+                      item_id: 'download_resume',
+                    });
+                  }
+                } catch (error) {
+                  console.error(error);
+                }
+              }}
             >
               Download Resume
             </a>

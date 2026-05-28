@@ -1,14 +1,16 @@
 import { Fragment } from 'react';
 import { AiOutlineBook } from 'react-icons/ai';
 import { SanitizedPublication } from '../../interfaces/sanitized-config';
-import { skeleton } from '../../utils';
+import { ga, skeleton } from '../../utils';
 
 const PublicationCard = ({
   publications,
   loading,
+  googleAnalyticsId,
 }: {
   publications: SanitizedPublication[];
   loading: boolean;
+  googleAnalyticsId?: string;
 }) => {
   const renderSkeleton = () => {
     const array = [];
@@ -82,6 +84,18 @@ const PublicationCard = ({
         href={item.link}
         target="_blank"
         rel="noreferrer"
+        onClick={() => {
+          try {
+            if (googleAnalyticsId) {
+              ga.event('select_content', {
+                content_type: 'publication',
+                item_id: item.title,
+              });
+            }
+          } catch (error) {
+            console.error(error);
+          }
+        }}
       >
         <div className="p-8 h-full w-full">
           <div className="flex items-center flex-col">
