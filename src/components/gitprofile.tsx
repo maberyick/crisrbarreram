@@ -32,6 +32,9 @@ import HeroImpactCard from './hero-impact-card';
 import QuickLinksBar from './quick-links-bar';
 import CareerTimelineCard from './career-timeline-card';
 
+const CURRENT_WORK_SUMMARY =
+  'Currently developing AI workflows and pipelines for OCT retina images, and working with foundation models for complex ophthalmology pathologies.';
+
 /**
  * Renders the GitProfile component.
  *
@@ -110,7 +113,7 @@ const GitProfile = ({ config }: { config: Config }) => {
       setProfile({
         avatar: data.avatar_url,
         name: data.name || ' ',
-        bio: data.bio || '',
+        bio: data.bio ? `${data.bio} · ${CURRENT_WORK_SUMMARY}` : CURRENT_WORK_SUMMARY,
         location: data.location || '',
         company: data.company || '',
       });

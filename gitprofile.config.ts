@@ -66,7 +66,7 @@ const CONFIG = {
   seo: {
     title: 'Portfolio of Cristian Barrera',
     description:
-      'Cristian Barrera, PhD. Software Developer II in medical imaging and AI, building distributed foundation model pipelines and production ML systems.',
+      'Cristian Barrera, PhD. Data Scientist III at Cleveland Clinic building AI workflows for OCT retina imaging and foundation models for complex ophthalmology pathology.',
     imageURL: 'https://crisbarrera.com/logo512.png',
   },
   social: {
