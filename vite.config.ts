@@ -17,6 +17,25 @@ const sameAs: string[] = [
     : '',
 ].filter(Boolean);
 
+const worksFor = CONFIG.experiences?.[0]?.company
+  ? {
+      '@type': 'Organization',
+      name: CONFIG.experiences[0].company,
+      url: CONFIG.experiences[0].companyLink || undefined,
+    }
+  : undefined;
+
+const alumniOf =
+  CONFIG.educations
+    ?.map((education) => education.institution)
+    .filter(Boolean)
+    .map((institution) => ({
+      '@type': 'CollegeOrUniversity',
+      name: institution,
+    })) || [];
+
+const knowsAbout = (CONFIG.skills || []).slice(0, 20);
+
 const structuredData = {
   '@context': 'https://schema.org',
   '@graph': [
@@ -36,6 +55,9 @@ const structuredData = {
       email: CONFIG.social.email || '',
       telephone: CONFIG.social.phone || '',
       jobTitle: 'Software Developer II (Medical Imaging)',
+      worksFor,
+      alumniOf,
+      knowsAbout,
     },
   ],
 };
