@@ -46,14 +46,14 @@ const HeroImpactCard = ({
           <h2 className="text-2xl sm:text-4xl font-extrabold leading-tight text-base-content mb-4">
             {loading
               ? skeleton({ widthCls: 'w-3/4', heightCls: 'h-10', shape: 'rounded-lg' })
-              : 'OCT Retina Pipelines to Foundation Models'}
+              : 'Data Scientist III: OCT Pipelines + Foundation Models'}
           </h2>
 
           <p className="text-sm sm:text-base text-base-content/75 max-w-3xl">
             {loading
               ? skeleton({ widthCls: 'w-full', heightCls: 'h-5', shape: 'rounded-lg' })
               : profile?.bio ||
-                'Currently developing AI workflows and pipelines for OCT retina images, while working with foundation models for complex ophthalmology pathologies.'}
+                'Building end-to-end AI workflows for OCT retina imaging and advancing foundation-model approaches for complex ophthalmology pathology.'}
           </p>
 
           <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4 mt-7">

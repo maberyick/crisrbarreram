@@ -31,9 +31,10 @@ import PublicationCard from './publication-card';
 import HeroImpactCard from './hero-impact-card';
 import QuickLinksBar from './quick-links-bar';
 import CareerTimelineCard from './career-timeline-card';
+import OCTCaseStudyCard from './oct-case-study-card';
 
 const CURRENT_WORK_SUMMARY =
-  'Currently developing AI workflows and pipelines for OCT retina images, and working with foundation models for complex ophthalmology pathologies.';
+  'Data Scientist III at Cleveland Clinic building AI pipelines for OCT retina imaging and foundation models for complex ophthalmology pathology.';
 
 /**
  * Renders the GitProfile component.
@@ -249,6 +250,10 @@ const GitProfile = ({ config }: { config: Config }) => {
               <div className="lg:col-span-2 col-span-1">
                 <div className="grid grid-cols-1 gap-6">
                   <HeroImpactCard loading={loading} profile={profile} />
+                  <OCTCaseStudyCard
+                    loading={loading}
+                    googleAnalyticsId={sanitizedConfig.googleAnalytics.id}
+                  />
                     {sanitizedConfig.experiences.length !== 0 && (
                       <CareerTimelineCard
                         loading={loading}
