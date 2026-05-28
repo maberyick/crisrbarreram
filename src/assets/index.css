@@ -87,6 +87,7 @@ body {
 .ambient-shell {
   position: relative;
   overflow: hidden;
+  perspective: 1200px;
 }
 
 .ambient-shell::before {
@@ -118,6 +119,42 @@ body {
 .ambient-shell > * {
   position: relative;
   z-index: 1;
+}
+
+.ambient-mesh-layer {
+  position: fixed;
+  inset: -12%;
+  pointer-events: none;
+  z-index: 0;
+  background:
+    conic-gradient(
+      from 90deg at 20% 25%,
+      rgba(252, 5, 91, 0.09),
+      rgba(33, 154, 175, 0.07),
+      rgba(232, 208, 58, 0.06),
+      rgba(252, 5, 91, 0.09)
+    );
+  opacity: 0.75;
+  transform: rotateX(12deg) rotateY(-8deg) scale(1.05);
+  transform-origin: center;
+  animation: meshDrift 16s ease-in-out infinite alternate;
+}
+
+.ambient-mesh-layer::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='180' height='180' viewBox='0 0 180 180'%3E%3Cg fill='none' stroke='%232a2730' stroke-opacity='0.07' stroke-width='1'%3E%3Cpath d='M0 45h180M0 90h180M0 135h180'/%3E%3Cpath d='M45 0v180M90 0v180M135 0v180'/%3E%3C/g%3E%3C/svg%3E");
+  mix-blend-mode: multiply;
+  opacity: 0.45;
+  animation: meshGridShift 24s linear infinite;
+}
+
+.ambient-mesh-layer::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(circle at 70% 30%, rgba(255, 255, 255, 0.25), transparent 45%);
 }
 
 .quick-links-wrap {
@@ -232,6 +269,32 @@ svg {
   100% {
     filter: saturate(112%);
     transform: translate3d(0, -8px, 0);
+  }
+}
+
+@keyframes meshDrift {
+  0% {
+    transform: rotateX(12deg) rotateY(-8deg) translate3d(-2%, 0%, 0) scale(1.05);
+  }
+  100% {
+    transform: rotateX(6deg) rotateY(8deg) translate3d(2%, -1.5%, 0) scale(1.08);
+  }
+}
+
+@keyframes meshGridShift {
+  0% {
+    transform: translate3d(0, 0, 0);
+  }
+  100% {
+    transform: translate3d(-36px, -36px, 0);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ambient-mesh-layer,
+  .ambient-mesh-layer::before,
+  .ambient-shell::before {
+    animation: none !important;
   }
 }
 
