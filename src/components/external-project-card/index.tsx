@@ -70,7 +70,7 @@ const ExternalProjectCard = ({
   const renderExternalProjects = () => {
     return externalProjects.map((item, index) => (
       <a
-        className="card shadow-md card-sm bg-base-100 cursor-pointer"
+        className="card shadow-md card-sm bg-base-100 cursor-pointer border border-base-300 hover:border-primary/40 transition-all duration-300 hover:-translate-y-1"
         key={index}
         href={item.link}
         onClick={(e) => {
@@ -90,32 +90,35 @@ const ExternalProjectCard = ({
         }}
       >
         <div className="p-8 h-full w-full">
-          <div className="flex items-center flex-col">
-            <div className="w-full">
-              <div className="px-4">
-                <div className="text-center w-full">
-                  <h2 className="font-medium text-center opacity-60 mb-2">
-                    {item.title}
-                  </h2>
-                  {item.imageUrl && (
-                    <div className="avatar opacity-90">
-                      <div className="w-24 h-24 mask mask-squircle">
-                        <LazyImage
-                          src={item.imageUrl}
-                          alt={'thumbnail'}
-                          placeholder={skeleton({
-                            widthCls: 'w-full',
-                            heightCls: 'h-full',
-                            shape: '',
-                          })}
-                        />
-                      </div>
-                    </div>
-                  )}
-                  <p className="mt-2 text-base-content text-sm text-justify">
-                    {item.description}
-                  </p>
+          <div className="flex items-start gap-4 h-full">
+            {item.imageUrl && (
+              <div className="avatar opacity-95 flex-shrink-0">
+                <div className="w-14 h-14 rounded-xl">
+                  <LazyImage
+                    src={item.imageUrl}
+                    alt={'thumbnail'}
+                    placeholder={skeleton({
+                      widthCls: 'w-full',
+                      heightCls: 'h-full',
+                      shape: '',
+                    })}
+                  />
                 </div>
+              </div>
+            )}
+
+            <div className="flex-1 min-w-0 flex flex-col h-full">
+              <div className="inline-flex w-fit text-[10px] tracking-[0.15em] uppercase font-semibold rounded-full px-3 py-1 mb-3 bg-primary/10 text-primary border border-primary/20">
+                Case Study
+              </div>
+              <h2 className="font-bold text-base-content mb-2 leading-snug">
+                {item.title}
+              </h2>
+              <p className="text-base-content/70 text-sm leading-relaxed">
+                {item.description}
+              </p>
+              <div className="mt-4 text-primary text-xs font-semibold tracking-wide uppercase">
+                View Work
               </div>
             </div>
           </div>

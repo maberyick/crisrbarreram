@@ -74,7 +74,7 @@ const GithubProjectCard = ({
   const renderProjects = () => {
     return githubProjects.map((item, index) => (
       <a
-        className="card shadow-md card-sm bg-base-100 cursor-pointer"
+        className="card shadow-md card-sm bg-base-100 cursor-pointer border border-base-300 hover:border-primary/40 transition-all duration-300 hover:-translate-y-1"
         href={item.html_url}
         key={index}
         onClick={(e) => {
@@ -93,34 +93,40 @@ const GithubProjectCard = ({
       >
         <div className="flex justify-between flex-col p-8 h-full w-full">
           <div>
-            <div className="flex items-center truncate">
-              <div className="card-title text-lg tracking-wide flex text-base-content opacity-60">
-                <MdInsertLink className="my-auto" />
+            <div className="inline-flex w-fit text-[10px] tracking-[0.15em] uppercase font-semibold rounded-full px-3 py-1 mb-3 bg-primary/10 text-primary border border-primary/20">
+              Open Source
+            </div>
+            <div className="flex items-center truncate mb-2">
+              <div className="card-title text-lg tracking-wide flex text-base-content">
+                <MdInsertLink className="my-auto mr-1 opacity-70" />
                 <span>{item.name}</span>
               </div>
             </div>
-            <p className="mb-5 mt-1 text-base-content text-sm">
-              {item.description}
+            <p className="mb-5 mt-1 text-base-content/70 text-sm leading-relaxed">
+              {item.description || 'Repository and implementation details.'}
             </p>
           </div>
-          <div className="flex justify-between text-sm text-base-content truncate">
-            <div className="flex grow">
-              <span className="mr-3 flex items-center">
-                <AiOutlineStar className="mr-0.5" />
+          <div className="flex flex-wrap justify-between gap-2 text-xs text-base-content truncate">
+            <div className="flex gap-2">
+              <span className="inline-flex items-center rounded-full px-2.5 py-1 bg-base-200 border border-base-300">
+                <AiOutlineStar className="mr-1" />
                 <span>{item.stargazers_count}</span>
               </span>
-              <span className="flex items-center">
-                <AiOutlineFork className="mr-0.5" />
+              <span className="inline-flex items-center rounded-full px-2.5 py-1 bg-base-200 border border-base-300">
+                <AiOutlineFork className="mr-1" />
                 <span>{item.forks_count}</span>
               </span>
             </div>
-            <div>
-              <span className="flex items-center">
+            <div className="flex gap-2">
+              <span className="inline-flex items-center rounded-full px-2.5 py-1 bg-base-200 border border-base-300">
                 <div
-                  className="w-3 h-3 rounded-full mr-1 opacity-60"
+                  className="w-2.5 h-2.5 rounded-full mr-1"
                   style={{ backgroundColor: getLanguageColor(item.language) }}
                 />
-                <span>{item.language}</span>
+                <span>{item.language || 'Code'}</span>
+              </span>
+              <span className="inline-flex items-center rounded-full px-2.5 py-1 text-primary border border-primary/25 bg-primary/10">
+                View Repo
               </span>
             </div>
           </div>

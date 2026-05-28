@@ -1,4 +1,5 @@
 @import 'tailwindcss';
+@import url('https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;700;800&display=swap');
 @plugin "daisyui" {
   themes: 'light', 'dark', 'corporate', 'lofi', 'coffee', 'winter', 'procyon';
 }
@@ -71,11 +72,43 @@
 
 body {
   margin: 0;
-  font-family:
-    -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen', 'Ubuntu',
-    'Cantarell', 'Fira Sans', 'Droid Sans', 'Helvetica Neue', sans-serif;
+  font-family: 'Space Grotesk', 'Segoe UI', sans-serif;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
+}
+
+.hero-impact-card {
+  background:
+    radial-gradient(circle at 14% 18%, rgba(252, 5, 91, 0.16), transparent 42%),
+    radial-gradient(circle at 88% 90%, rgba(33, 154, 175, 0.15), transparent 38%),
+    linear-gradient(145deg, rgba(255, 255, 255, 0.82), rgba(240, 241, 249, 0.75));
+}
+
+.hero-impact-pill {
+  color: #7f1840;
+  border: 1px solid rgba(252, 5, 91, 0.25);
+  border-radius: 999px;
+  padding: 0.35rem 0.8rem;
+  background: rgba(252, 5, 91, 0.06);
+}
+
+.hero-impact-dot {
+  width: 0.45rem;
+  height: 0.45rem;
+  border-radius: 999px;
+  background: #fc055b;
+  box-shadow: 0 0 0 6px rgba(252, 5, 91, 0.16);
+}
+
+.hero-impact-stat {
+  border: 1px solid rgba(42, 39, 48, 0.12);
+  background: rgba(255, 255, 255, 0.62);
+  backdrop-filter: blur(4px);
+  transition: transform 0.25s ease;
+}
+
+.hero-impact-stat:hover {
+  transform: translateY(-3px);
 }
 
 code {
