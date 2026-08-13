@@ -1,0 +1,2324 @@
+<!doctype html><html lang="en"><head><meta charset=utf8><meta name=viewport content="width=device-width,initial-scale=1"><style>:root{color-scheme:light}body{margin:0;padding:0;font:14px -apple-system,BlinkMacSystemFont,sans-serif;background:#faf9f5;color:#141413}img{max-width:100%}</style><title>How a Vision Transformer Sees an OCT B-scan</title><meta name="description" content="Design note: patch size, token budget and why Dice misleads on retinal layers. Companion to the AI Summit 2026 poster."><meta name="viewport" content="width=device-width,initial-scale=1"></head><body>
+<div id="site-bar">
+  <a href="./">&larr; OCT AI at Cleveland Clinic &mdash; poster summary</a>
+  <span>Design note &middot; Cristian Barrera</span>
+</div>
+<style>
+#site-bar{font:500 14px/1.4 -apple-system,BlinkMacSystemFont,"Segoe UI",Arial,sans-serif;
+display:flex;flex-wrap:wrap;gap:12px;justify-content:space-between;align-items:center;
+padding:11px clamp(1.1rem,4vw,3.25rem);background:#0f4f79;color:#cfe4f2}
+#site-bar a{color:#fff;text-decoration:none;font-weight:600}
+#site-bar a:hover{text-decoration:underline}
+@media (prefers-color-scheme:dark){#site-bar{background:#0b3f60}}
+</style>
+
+
+
+<style>
+/* ============================================================
+   TOKENS
+   Ground: cool instrument grey. Signal: amber (the hyper-
+   reflective bands of an OCT scan). Structure: Okabe-Ito blue.
+   Data-encoding hues follow the project's Okabe-Ito convention.
+   ============================================================ */
+:root{
+  --page:#E9EBEE; --panel:#F4F6F8; --plate:#FFFFFF; --plate-2:#FAFBFC;
+  --line:#D4D9E0; --line-2:#B9C1CB;
+  --ink:#14181D; --ink-2:#454D57; --ink-3:#6A737F;
+  --blue:#0072B2; --amber:#E69F00; --green:#009E73; --verm:#D55E00;
+  --t-blue:#005B8E; --t-amber:#8A6100; --t-green:#00674E; --t-verm:#A8480A;
+  --tint-blue:rgba(0,114,178,.09); --tint-amber:rgba(230,159,0,.14);
+  --tint-green:rgba(0,158,115,.10); --tint-verm:rgba(213,94,0,.10);
+  --shadow:0 1px 2px rgba(20,24,29,.06), 0 10px 26px -14px rgba(20,24,29,.28);
+}
+@media (prefers-color-scheme: dark){
+  :root{
+    --page:#101318; --panel:#171B21; --plate:#1D222A; --plate-2:#232932;
+    --line:#2C333D; --line-2:#3C4551;
+    --ink:#E7EAEF; --ink-2:#A5AEB9; --ink-3:#7A8490;
+    --blue:#2E90CE; --amber:#C08400; --green:#0FA57E; --verm:#DB6420;
+    --t-blue:#6FBDEC; --t-amber:#E7AC3A; --t-green:#3ECBA3; --t-verm:#F2864B;
+    --tint-blue:rgba(46,144,206,.14); --tint-amber:rgba(192,132,0,.18);
+    --tint-green:rgba(15,165,126,.14); --tint-verm:rgba(219,100,32,.14);
+    --shadow:0 1px 2px rgba(0,0,0,.45), 0 12px 32px -16px rgba(0,0,0,.75);
+  }
+}
+:root[data-theme="light"]{
+  --page:#E9EBEE; --panel:#F4F6F8; --plate:#FFFFFF; --plate-2:#FAFBFC;
+  --line:#D4D9E0; --line-2:#B9C1CB;
+  --ink:#14181D; --ink-2:#454D57; --ink-3:#6A737F;
+  --blue:#0072B2; --amber:#E69F00; --green:#009E73; --verm:#D55E00;
+  --t-blue:#005B8E; --t-amber:#8A6100; --t-green:#00674E; --t-verm:#A8480A;
+  --tint-blue:rgba(0,114,178,.09); --tint-amber:rgba(230,159,0,.14);
+  --tint-green:rgba(0,158,115,.10); --tint-verm:rgba(213,94,0,.10);
+  --shadow:0 1px 2px rgba(20,24,29,.06), 0 10px 26px -14px rgba(20,24,29,.28);
+}
+:root[data-theme="dark"]{
+  --page:#101318; --panel:#171B21; --plate:#1D222A; --plate-2:#232932;
+  --line:#2C333D; --line-2:#3C4551;
+  --ink:#E7EAEF; --ink-2:#A5AEB9; --ink-3:#7A8490;
+  --blue:#2E90CE; --amber:#C08400; --green:#0FA57E; --verm:#DB6420;
+  --t-blue:#6FBDEC; --t-amber:#E7AC3A; --t-green:#3ECBA3; --t-verm:#F2864B;
+  --tint-blue:rgba(46,144,206,.14); --tint-amber:rgba(192,132,0,.18);
+  --tint-green:rgba(15,165,126,.14); --tint-verm:rgba(219,100,32,.14);
+  --shadow:0 1px 2px rgba(0,0,0,.45), 0 12px 32px -16px rgba(0,0,0,.75);
+}
+/* A B-scan is a dark-ground image in every theme. Marks drawn on top of
+   one therefore use fixed colours, not theme tokens. */
+:root{
+  --scan:#0A0D11; --scan-2:#111620;
+  --on-amber:#F2B23A; --on-blue:#63B6E8; --on-green:#3ECBA3;
+  --on-verm:#F2864B; --on-ink:#EAEDF2; --on-ink-2:#9AA4B0;
+
+  --f-display:"Franklin Gothic Medium","Franklin Gothic","Helvetica Neue","Segoe UI",Arial,sans-serif;
+  --f-body:Charter,"Bitstream Charter","Iowan Old Style","Palatino Linotype",Palatino,Cambria,Georgia,serif;
+  --f-mono:Consolas,"SF Mono","DejaVu Sans Mono",Menlo,monospace;
+}
+
+/* ============================================================ BASE */
+body{
+  background:var(--page); color:var(--ink);
+  font-family:var(--f-body); font-size:17px; line-height:1.62;
+  -webkit-font-smoothing:antialiased; overflow-x:hidden;
+}
+*{box-sizing:border-box}
+h1,h2,h3,h4{font-family:var(--f-display); font-weight:600; text-wrap:balance; letter-spacing:-.01em; margin:0}
+p{margin:0}
+a{color:var(--t-blue)}
+:focus-visible{outline:2px solid var(--blue); outline-offset:3px; border-radius:2px}
+
+.wrap{max-width:74rem; margin-inline:auto; padding-inline:clamp(1.1rem,4vw,3.25rem)}
+.band{padding-block:clamp(3.25rem,7vw,6rem); border-top:1px solid var(--line)}
+.band.alt{background:var(--panel)}
+.stack{display:flex; flex-direction:column; gap:1.5rem}
+.stack-lg{display:flex; flex-direction:column; gap:2.5rem}
+/* flex/grid children default to min-width:auto and would let a wide table or
+   diagram push the whole page sideways — they must be allowed to shrink. */
+.stack>*,.stack-lg>*,.row>*{min-width:0}
+.prose{max-width:35rem; display:flex; flex-direction:column; gap:1rem}
+.prose.wide{max-width:44rem}
+/* prose + margin note: the note carries the numbers, the prose carries the argument */
+.row{display:grid; grid-template-columns:minmax(0,1fr); gap:clamp(1.75rem,4vw,4rem)}
+@media (min-width:62rem){ .row{grid-template-columns:minmax(0,35rem) minmax(13rem,20rem)} }
+.mnote{
+  align-self:end; border-top:2px solid var(--amber); padding-top:.9rem;
+  display:flex; flex-direction:column; gap:.85rem;
+}
+.mnote .t{font-family:var(--f-mono); font-size:.66rem; letter-spacing:.14em; text-transform:uppercase; color:var(--ink-3)}
+.mnote dl{margin:0; display:flex; flex-direction:column; gap:.7rem}
+.mnote .r{display:flex; justify-content:space-between; align-items:baseline; gap:1rem;
+  border-bottom:1px solid var(--line); padding-bottom:.55rem}
+.mnote .r:last-child{border-bottom:0; padding-bottom:0}
+.mnote .l{font-size:.86rem; color:var(--ink-2); line-height:1.35}
+.mnote .n{font-family:var(--f-mono); font-size:1rem; font-weight:600; font-variant-numeric:tabular-nums;
+  letter-spacing:-.02em; white-space:nowrap; color:var(--ink)}
+.mnote .n.a{color:var(--t-amber)} .mnote .n.g{color:var(--t-green)} .mnote .n.v{color:var(--t-verm)}
+.mnote.b{border-top-color:var(--blue)} .mnote.g{border-top-color:var(--green)}
+.mnote.v{border-top-color:var(--verm)}
+
+/* eyebrow + heading device */
+.eyebrow{
+  font-family:var(--f-mono); font-size:.7rem; letter-spacing:.16em;
+  text-transform:uppercase; color:var(--ink-3);
+  display:flex; align-items:center; gap:.65rem;
+}
+.eyebrow::before{content:""; width:.62rem; height:.62rem; background:var(--amber); flex:none}
+.eyebrow.b::before{background:var(--blue)}
+.eyebrow.g::before{background:var(--green)}
+.eyebrow.v::before{background:var(--verm)}
+.eyebrow::after{content:""; flex:1; height:1px; background:var(--line-2)}
+h2{font-size:clamp(1.85rem,1.1rem + 2.5vw,3rem); line-height:1.06; margin-top:.85rem}
+h3{font-size:1.15rem; letter-spacing:.005em}
+.lead{font-size:1.14rem; color:var(--ink-2)}
+.dfn{font-style:italic; color:var(--ink); border-bottom:1px dotted var(--line-2)}
+strong{font-weight:600}
+.num{font-family:var(--f-mono); font-variant-numeric:tabular-nums; font-weight:600; letter-spacing:-.02em}
+.u-amber{color:var(--t-amber)} .u-blue{color:var(--t-blue)}
+.u-green{color:var(--t-green)} .u-verm{color:var(--t-verm)}
+
+/* ============================================================ FIGURE PLATE */
+figure.plate{margin:0; background:var(--plate); border:1px solid var(--line); box-shadow:var(--shadow)}
+.plate-body{padding:clamp(.9rem,2vw,1.5rem); overflow-x:auto}
+.plate-body svg{display:block; width:100%; height:auto}
+.plate-body .fixed{min-width:640px}
+figcaption{
+  border-top:1px solid var(--line); padding:.7rem clamp(.9rem,2vw,1.5rem);
+  font-family:var(--f-mono); font-size:.74rem; line-height:1.55; color:var(--ink-3);
+  background:var(--plate-2);
+}
+.fignum{color:var(--t-amber); letter-spacing:.08em; text-transform:uppercase; margin-right:.5rem}
+
+/* ============================================================ HERO */
+.hero{padding-top:clamp(2.5rem,6vw,4.5rem); padding-bottom:0; border-top:0}
+.hero h1{
+  font-size:clamp(2.3rem,1rem + 4.6vw,4.4rem); line-height:.98; letter-spacing:-.025em;
+  max-width:16ch; margin-top:1.1rem;
+}
+.hero .lead{max-width:38rem; margin-top:1.35rem}
+.kicker{font-family:var(--f-mono); font-size:.72rem; letter-spacing:.18em; text-transform:uppercase; color:var(--t-amber)}
+.scanstrip{margin-top:clamp(2rem,4vw,3rem); background:var(--scan); border-block:1px solid var(--line)}
+.scanstrip svg{display:block; width:100%; height:auto}
+
+/* ============================================================ TOC */
+.toc{display:grid; grid-template-columns:repeat(auto-fit,minmax(15rem,1fr)); gap:0; border:1px solid var(--line); background:var(--plate)}
+.toc a{
+  display:block; padding:1rem 1.15rem; text-decoration:none; color:var(--ink);
+  border-right:1px solid var(--line); border-bottom:1px solid var(--line);
+  font-family:var(--f-display); font-size:.98rem; line-height:1.3;
+}
+.toc a span{display:block; font-family:var(--f-mono); font-size:.66rem; letter-spacing:.14em; color:var(--ink-3); text-transform:uppercase; margin-bottom:.4rem}
+.toc a:hover{background:var(--tint-amber)}
+
+/* ============================================================ STAT TILES */
+.tiles{display:grid; grid-template-columns:repeat(auto-fit,minmax(13rem,1fr)); gap:1px; background:var(--line); border:1px solid var(--line)}
+.tile{background:var(--plate); padding:1.1rem 1.15rem 1.2rem; display:flex; flex-direction:column; gap:.3rem}
+.tile .k{font-family:var(--f-mono); font-size:.68rem; letter-spacing:.13em; text-transform:uppercase; color:var(--ink-3)}
+.tile .v{font-family:var(--f-mono); font-size:1.72rem; font-weight:600; letter-spacing:-.03em; font-variant-numeric:tabular-nums; line-height:1.1}
+.tile .s{font-size:.9rem; color:var(--ink-2); line-height:1.4}
+
+/* ============================================================ TABLE */
+.tablewrap{overflow-x:auto; border:1px solid var(--line); background:var(--plate)}
+table{border-collapse:collapse; width:100%; min-width:44rem; font-family:var(--f-mono); font-size:.82rem; font-variant-numeric:tabular-nums}
+th,td{text-align:right; padding:.62rem .8rem; border-bottom:1px solid var(--line); white-space:nowrap}
+th:first-child,td:first-child{text-align:left}
+thead th{font-size:.66rem; letter-spacing:.11em; text-transform:uppercase; color:var(--ink-3); font-weight:400; background:var(--plate-2)}
+tbody tr.pick{background:var(--tint-green)}
+tbody tr.pick td:first-child{font-weight:700; color:var(--t-green)}
+tbody tr:last-child td{border-bottom:0}
+
+/* ============================================================ CONFIG SWITCHER */
+.switch{display:flex; flex-wrap:wrap; gap:.5rem; margin-bottom:1rem}
+.switch button{
+  font-family:var(--f-mono); font-size:.74rem; letter-spacing:.02em;
+  padding:.5rem .8rem; background:var(--plate-2); color:var(--ink-2);
+  border:1px solid var(--line-2); cursor:pointer; line-height:1.2;
+}
+.switch button:hover{color:var(--ink); border-color:var(--ink-3)}
+.switch button[aria-pressed="true"]{background:var(--ink); color:var(--plate); border-color:var(--ink)}
+.readout{display:grid; grid-template-columns:repeat(auto-fit,minmax(9rem,1fr)); gap:1px; background:var(--line); border:1px solid var(--line); margin-top:1rem}
+.readout div{background:var(--plate); padding:.75rem .85rem}
+.readout .k{font-family:var(--f-mono); font-size:.63rem; letter-spacing:.12em; text-transform:uppercase; color:var(--ink-3); display:block}
+.readout .v{font-family:var(--f-mono); font-size:1.28rem; font-weight:600; font-variant-numeric:tabular-nums; letter-spacing:-.02em}
+
+/* comparison table: prose in every cell, so left-aligned and wrappable */
+table.cmp{min-width:38rem; font-size:.84rem}
+table.cmp th,table.cmp td{text-align:left; white-space:normal; vertical-align:top; line-height:1.5}
+table.cmp td:first-child{color:var(--ink-3); width:20%}
+table.cmp col.c-layer,table.cmp th.c-layer{background:var(--tint-blue)}
+table.cmp col.c-fluid,table.cmp th.c-fluid{background:var(--tint-verm)}
+table.cmp thead th.c-layer{color:var(--t-blue)} table.cmp thead th.c-fluid{color:var(--t-verm)}
+
+/* ============================================================ CALLOUT */
+.callout{border-left:3px solid var(--amber); background:var(--tint-amber); padding:1.05rem 1.25rem; max-width:44rem}
+.callout.g{border-left-color:var(--green); background:var(--tint-green)}
+.callout.v{border-left-color:var(--verm); background:var(--tint-verm)}
+.callout.wide{max-width:none}
+.callout .h{font-family:var(--f-display); font-weight:600; font-size:1rem; margin-bottom:.35rem; display:block}
+.callout p+p{margin-top:.7rem}
+.callout .tag{font-family:var(--f-mono); font-size:.63rem; letter-spacing:.16em; text-transform:uppercase;
+  color:var(--t-verm); display:block; margin-bottom:.5rem}
+
+/* ============================================================ REMEMBER CARDS */
+.cards{display:grid; grid-template-columns:repeat(auto-fit,minmax(16rem,1fr)); gap:1px; background:var(--line); border:1px solid var(--line)}
+.card{background:var(--plate); padding:1.5rem 1.35rem; display:flex; flex-direction:column; gap:.6rem}
+.card .n{font-family:var(--f-mono); font-size:.7rem; letter-spacing:.14em; color:var(--t-amber)}
+.card h3{font-size:1.22rem; line-height:1.15}
+.card p{font-size:.98rem; color:var(--ink-2)}
+
+/* ============================================================ GLOSSARY */
+.gloss{display:grid; grid-template-columns:repeat(auto-fit,minmax(17rem,1fr)); gap:1px 1px; background:var(--line); border:1px solid var(--line)}
+.gloss div{background:var(--plate); padding:.85rem 1rem}
+.gloss dt{font-family:var(--f-mono); font-size:.76rem; letter-spacing:.03em; color:var(--t-blue); margin-bottom:.2rem}
+.gloss dd{margin:0; font-size:.92rem; color:var(--ink-2); line-height:1.45}
+
+/* ============================================================ SVG TEXT */
+svg text{font-family:var(--f-mono); font-variant-numeric:tabular-nums}
+.svg-lbl{font-size:11px; fill:var(--ink-2)}
+.svg-lbl-sm{font-size:9.5px; fill:var(--ink-3)}
+.svg-lbl-hd{font-size:12px; fill:var(--ink); font-weight:600}
+.on-lbl{font-size:11px; fill:var(--on-ink-2)}
+.on-lbl-hd{font-size:12px; fill:var(--on-ink); font-weight:600}
+
+/* ============================================================ MOTION */
+.rise{opacity:0; transform:translateY(8px); transition:opacity .6s ease, transform .6s ease}
+.rise.in{opacity:1; transform:none}
+@keyframes gridin{from{opacity:0} to{opacity:.55}}
+.gridline{opacity:0; animation:gridin .5s ease forwards}
+@media (prefers-reduced-motion: reduce){
+  .rise{opacity:1; transform:none; transition:none}
+  .gridline{animation:none; opacity:.55}
+  *{animation-duration:.001s !important; transition-duration:.001s !important}
+}
+
+footer{padding-block:3rem; border-top:1px solid var(--line); color:var(--ink-3); font-family:var(--f-mono); font-size:.74rem; line-height:1.7}
+</style>
+
+
+<!-- ══════════════════════════════════════════════════ HERO ══ -->
+<header class="band hero">
+  <div class="wrap">
+    <p class="kicker">MANTIS · retinal layer segmentation · design note</p>
+    <h1>How a vision transformer sees an OCT B-scan</h1>
+    <p class="lead">The model does not look at pixels. It looks at <strong>tiles</strong> — and on a macular
+    B-scan one tile is about <span class="num">62&nbsp;µm</span> deep, which is thicker than the retinal pigment
+    epithelium, the ellipsoid zone and the external limiting membrane <em>put together</em>. Almost every design
+    decision below follows from that one number.</p>
+    <p style="max-width:38rem; margin-top:1.1rem; font-size:.98rem; color:var(--ink-2); border-left:3px solid var(--amber); padding-left:1rem">
+      <strong>MANTIS</strong> is this project's OCT model: the <strong>VisionFM</strong> retinal foundation-model
+      backbone, given <em>our</em> continued pretraining on <span class="num">3.2 million</span> B-scans and
+      <em>our</em> per-structure fine-tuning, with an <strong>OctMoE</strong> mixture-of-experts block and
+      <strong>LoRA</strong> adapters on top. Everything below is about MANTIS — what it does today, and where the
+      design should go next.</p>
+  </div>
+  <div class="scanstrip">
+    <svg id="hero-scan" viewBox="0 0 1200 300" preserveAspectRatio="xMidYMid slice" role="img"
+         aria-label="Schematic OCT B-scan with a 16-by-16 pixel patch grid overlaid"></svg>
+  </div>
+  <div class="wrap" style="padding-top:1.6rem">
+    <p style="font-family:var(--f-mono); font-size:.74rem; color:var(--ink-3); line-height:1.6; max-width:52rem">
+      Schematic macular B-scan. The overlaid squares are the model's <span class="u-amber">tokens</span> —
+      one square = one 16&nbsp;×&nbsp;16-pixel patch = one unit of everything the network reasons about.
+    </p>
+  </div>
+</header>
+
+
+<!-- ══════════════════════════════════════════════════ TOC ══ -->
+<section class="band">
+  <div class="wrap stack">
+    <p class="eyebrow b">What this note covers</p>
+    <nav class="toc">
+      <a href="#tokens"><span>1 · vocabulary</span>What a “token” actually is</a>
+      <a href="#nuance"><span>2 · the honest version</span>Is detail lost? Not exactly</a>
+      <a href="#scale"><span>3 · microns</span>A patch is thicker than a layer</a>
+      <a href="#budget"><span>4 · the key idea</span>Spend tokens where the retina is</a>
+      <a href="#aniso"><span>5 · geometry</span>Why patches shouldn’t be square</a>
+      <a href="#subpixel"><span>6 · output</span>Sub-pixel by construction</a>
+      <a href="#dice"><span>7 · the crux</span>Why Dice misleads on layers</a>
+      <a href="#vmt"><span>8 · context</span>Vitreomacular traction lives outside the crop</a>
+      <a href="#moe"><span>9 · capacity</span>Mixture of Experts: eight, two consulted</a>
+      <a href="#tasks"><span>10 · two problems</span>Layers and fluid are not the same task</a>
+    </nav>
+  </div>
+</section>
+
+
+<!-- ══════════════════════════════════════════════════ 1 TOKENS ══ -->
+<section class="band alt" id="tokens">
+  <div class="wrap stack-lg">
+    <div class="row rise">
+    <div class="prose">
+      <p class="eyebrow">1 · vocabulary</p>
+      <h2>A token is not a pixel. It is a tile.</h2>
+      <p class="lead">You already have the right intuition from language models: text is chopped into
+      <span class="dfn">tokens</span>, and one token is roughly one short word — about four characters.
+      The model never sees letters; it sees a sequence of tokens.</p>
+      <p>Vision transformers borrow the machinery wholesale. The only thing that changes is what gets chopped.
+      An image is cut into a regular grid of squares, and <strong>each square becomes one token</strong>. The square
+      is called a <span class="dfn">patch</span>. It is the atom of the model: attention, memory cost and the
+      decoder all operate at patch granularity, never below it.</p>
+      <p>MANTIS today resizes each B-scan to <span class="num">512 × 512</span> and uses a
+      <span class="num">16 × 16</span> patch. That gives a <span class="num">32 × 32</span> grid —
+      <strong><span class="num">1,024</span> tokens per B-scan</strong>.</p>
+    </div>
+    <aside class="mnote">
+      <p class="t">The arithmetic</p>
+      <dl>
+        <div class="r"><span class="l">image, after resize</span><span class="n">512 × 512</span></div>
+        <div class="r"><span class="l">patch size</span><span class="n">16 × 16</span></div>
+        <div class="r"><span class="l">grid</span><span class="n">32 × 32</span></div>
+        <div class="r"><span class="l">tokens per B-scan</span><span class="n a">1,024</span></div>
+        <div class="r"><span class="l">numbers per token</span><span class="n">768</span></div>
+      </dl>
+    </aside>
+    </div>
+
+    <figure class="plate rise">
+      <div class="plate-body">
+        <svg id="fig-tokens" viewBox="0 0 900 330" role="img"
+             aria-label="Left: a phrase cut into word-fragment tokens. Right: a B-scan cut into a 32 by 32 grid of patch tokens, with one patch magnified to show its 16 by 16 pixels."></svg>
+      </div>
+      <figcaption><span class="fignum">Fig. 1</span>Same mechanism, different substrate. Left: language — a token is
+      a fragment of a word, ~4 characters. Right: vision — a token is a whole 16 × 16 square of pixels. The magnified
+      tile shows the 256 pixels that collapse into a single token.</figcaption>
+    </figure>
+
+    <div class="tiles rise">
+      <div class="tile"><span class="k">One B-scan</span><span class="v">1,024</span><span class="s">tokens — a 32 × 32 grid over a 512 × 512 image</span></div>
+      <div class="tile"><span class="k">One 97-slice volume</span><span class="v">≈ 99,000</span><span class="s">tokens — the whole cube, one scan session</span></div>
+      <div class="tile"><span class="k">Pretraining corpus</span><span class="v">≈ 3.3 B</span><span class="s">tokens across 3.2 million B-scans</span></div>
+    </div>
+
+    <div class="prose rise">
+      <p>Each patch — <span class="num">16 × 16 = 256</span> pixel values — is turned into a single list of
+      <span class="num">768</span> numbers. That list is the <span class="dfn">embedding</span>: the model's internal
+      description of that tile. Everything downstream works with those 1,024 vectors and nothing else.</p>
+    </div>
+  </div>
+</section>
+
+
+<!-- ══════════════════════════════════════════════════ 2 NUANCE ══ -->
+<section class="band" id="nuance">
+  <div class="wrap stack-lg">
+    <div class="row rise">
+    <div class="prose">
+      <p class="eyebrow b">2 · the honest version</p>
+      <h2>“Patching destroys detail” is the wrong criticism.</h2>
+      <p class="lead">It is tempting to say that squeezing 256 pixels into one token throws information away.
+      Mathematically, it does not.</p>
+      <p>The patch embedding is a <strong>linear map from 256 numbers to 768 numbers</strong> — it goes
+      <em>up</em> in dimension, not down. It is over-complete. There is more than enough room in the output to
+      hold everything that was in the patch.</p>
+      <p>The real problem is subtler and it is about <strong>organisation, not capacity</strong>:</p>
+    </div>
+    <aside class="mnote b">
+      <p class="t">Two different claims</p>
+      <dl>
+        <div class="r"><span class="l">“the patch embedding loses detail”</span><span class="n v">false</span></div>
+        <div class="r"><span class="l">“nothing rewards keeping it”</span><span class="n a">true</span></div>
+      </dl>
+      <p class="l">Both are about the same 16 × 16 square — but only the second one is a reason to change the design.</p>
+    </aside>
+    </div>
+
+    <figure class="plate rise">
+      <div class="plate-body">
+        <svg id="fig-embed" viewBox="0 0 900 340" role="img"
+             aria-label="A 16 by 16 grid of 256 pixels feeding a linear projection into a 768-element vector, then a pipeline showing attention between tokens and a decoder upsampling from a 32 by 32 grid."></svg>
+      </div>
+      <figcaption><span class="fignum">Fig. 2</span>256 in, 768 out — nothing is compressed away at this step.
+      But from here on the representation is <em>organised</em> at patch granularity: attention compares tokens to
+      tokens, and the decoder has to rebuild a 512 × 512 answer by upsampling from a 32 × 32 grid.</figcaption>
+    </figure>
+
+    <div class="callout rise">
+      <span class="h">The precise statement</span>
+      <p>Sub-patch detail is not destroyed — it has to be <em>carried inside</em> a token vector and then
+      <em>decoded back out</em>. Nothing in the self-supervised pretraining objective explicitly rewards the model
+      for doing that well. So fine detail is <strong>not privileged</strong>. It survives only if it happens to be
+      useful for whatever the pretraining task was.</p>
+    </div>
+  </div>
+</section>
+
+
+<!-- ══════════════════════════════════════════════════ 3 SCALE ══ -->
+<section class="band alt" id="scale">
+  <div class="wrap stack-lg">
+    <div class="row rise">
+    <div class="prose">
+      <p class="eyebrow">3 · microns</p>
+      <h2>One patch is thicker than three retinal layers.</h2>
+      <p class="lead">Here is where the abstraction collides with the anatomy. These are measured values from our
+      gold-standard set, not textbook figures.</p>
+      <p>Axial (depth) resolution is <span class="num">3.9 µm</span> per pixel; laterally it is about
+      <span class="num">5.7 µm</span>. Total retinal thickness from the <span class="dfn">ILM</span> (inner limiting
+      membrane, the vitreous-facing surface) down to <span class="dfn">BM</span> (Bruch's membrane, the outer
+      boundary) averages <span class="num">75.5 px = 294 µm</span>, with a 95th percentile of
+      <span class="num">98.9 px</span>.</p>
+      <p>The individual layers we are asked to trace are far thinner than that:
+      <span class="dfn">ELM</span> (external limiting membrane) is <span class="num">1–2 px</span>;
+      <span class="dfn">EZ</span> (ellipsoid zone) is <span class="num">2–3 px</span>;
+      <span class="dfn">RPE</span> (retinal pigment epithelium) is <span class="num">2–4 px</span>.</p>
+      <p>A single 16-pixel patch spans <strong><span class="num">62 µm</span> of depth</strong>. The entire retina
+      is only <strong><span class="num">4.7</span> patches thick</strong>. Several distinct layers routinely fall
+      inside <em>one</em> token.</p>
+    </div>
+    <aside class="mnote">
+      <p class="t">Measured — gold-standard set</p>
+      <dl>
+        <div class="r"><span class="l">axial resolution</span><span class="n">3.9 µm/px</span></div>
+        <div class="r"><span class="l">lateral resolution</span><span class="n">~5.7 µm/px</span></div>
+        <div class="r"><span class="l">retina, ILM → BM (mean)</span><span class="n">75.5 px</span></div>
+        <div class="r"><span class="l">…in microns</span><span class="n">294 µm</span></div>
+        <div class="r"><span class="l">ELM thickness</span><span class="n">1–2 px</span></div>
+        <div class="r"><span class="l">EZ thickness</span><span class="n">2–3 px</span></div>
+        <div class="r"><span class="l">RPE thickness</span><span class="n">2–4 px</span></div>
+        <div class="r"><span class="l">one 16-px patch</span><span class="n a">62 µm</span></div>
+      </dl>
+    </aside>
+    </div>
+
+    <figure class="plate rise">
+      <div class="plate-body">
+        <svg id="fig-scale" viewBox="0 0 900 425" role="img"
+             aria-label="A magnified outer-retinal layer stack with a 16-pixel patch square drawn to scale, showing that one patch swallows the ELM, ellipsoid zone and RPE together."></svg>
+      </div>
+      <figcaption><span class="fignum">Fig. 3</span>Outer retina at true axial scale (3.9 µm per pixel). The amber
+      square is one 16 × 16 patch — the model's smallest unit. It swallows ELM, EZ and RPE in a single token.
+      Right: the whole retina, 75.5 px, is 4.7 patch-rows deep.</figcaption>
+    </figure>
+  </div>
+</section>
+
+
+<!-- ══════════════════════════════════════════════════ 4 BUDGET ══ -->
+<section class="band" id="budget">
+  <div class="wrap stack-lg">
+    <div class="row rise">
+    <div class="prose">
+      <p class="eyebrow g">4 · the key idea</p>
+      <h2>Buy resolution by not spending tokens on vitreous.</h2>
+      <p class="lead">The obvious fix — use smaller patches everywhere — is unaffordable. Attention cost grows with
+      the <strong>square</strong> of the token count, because every token attends to every other token. Halving the
+      patch size in both directions quadruples the tokens and multiplies the cost by sixteen.</p>
+      <p>But look at where the tokens are currently going. On a 496-row B-scan the retina occupies only
+      <span class="num">76–99</span> rows — about <strong>18%</strong> of the image. The rest is vitreous above and
+      choroid/sclera below.</p>
+      <p>You cannot simply crop to 100 rows, because the retina's <em>position</em> moves between scans: the topmost
+      ILM row ranges from <span class="num">41</span> to <span class="num">102</span>, and the BM row from
+      <span class="num">233</span> to <span class="num">366</span>. A fixed crop wide enough to catch every case still
+      needs <span class="num">325</span> of 496 rows — <strong>66%</strong>, barely a saving.</p>
+      <p>The unlock is <span class="dfn">flattening</span>: a standard OCT preprocessing step that re-aligns every
+      A-scan column so Bruch's membrane becomes a straight horizontal line. Once the retina no longer wanders,
+      the crop collapses to about <strong><span class="num">128</span> rows</strong>.</p>
+    </div>
+    <aside class="mnote g">
+      <p class="t">Where the 496 rows go</p>
+      <dl>
+        <div class="r"><span class="l">rows the retina occupies</span><span class="n">76–99</span></div>
+        <div class="r"><span class="l">share of the scan</span><span class="n">≈ 18%</span></div>
+        <div class="r"><span class="l">ILM topmost row, observed</span><span class="n">41 – 102</span></div>
+        <div class="r"><span class="l">BM row, observed</span><span class="n">233 – 366</span></div>
+        <div class="r"><span class="l">fixed crop still needed</span><span class="n v">325 rows</span></div>
+        <div class="r"><span class="l">after flattening to BM</span><span class="n g">128 rows</span></div>
+      </dl>
+    </aside>
+    </div>
+
+    <figure class="plate rise">
+      <div class="plate-body">
+        <svg id="fig-crop" viewBox="0 0 900 420" role="img"
+             aria-label="Two 496-pixel columns compared: unflattened, where ILM and BM positions vary so a fixed crop needs 325 rows; and flattened to Bruch's membrane, where 128 rows suffice."></svg>
+      </div>
+      <figcaption><span class="fignum">Fig. 4</span>Why flattening pays. Left: ILM and BM positions vary scan to
+      scan (bands show the observed ranges), so a fixed crop must span 325 of 496 rows. Right: align to Bruch's
+      membrane first and 128 rows cover every case.</figcaption>
+    </figure>
+
+    <div class="prose wide rise">
+      <h3>Four ways to spend the same token budget</h3>
+      <p>The saved rows are then re-spent on finer axial sampling. Pick a design below and watch what happens to
+      depth resolution and cost.</p>
+    </div>
+
+    <figure class="plate rise">
+      <div class="plate-body">
+        <div class="switch" id="cfg-switch" role="group" aria-label="Choose a patching design"></div>
+        <svg id="fig-cfg" viewBox="0 0 900 300" role="img" aria-label="Patch grid drawn to scale over the input region for the selected design"></svg>
+        <div class="readout" id="cfg-readout"></div>
+      </div>
+      <figcaption><span class="fignum">Fig. 5</span>The same B-scan under four patching designs. The grid is drawn
+      to scale; the retina schematic underneath shows how many patch-rows land on tissue.</figcaption>
+    </figure>
+
+    <div class="tablewrap rise">
+      <table>
+        <caption class="sr" style="position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0)">Comparison of four patching designs</caption>
+        <thead>
+          <tr>
+            <th scope="col">design</th><th scope="col">input (axial × lateral)</th><th scope="col">patch</th>
+            <th scope="col">tokens</th><th scope="col">microns per token (depth)</th>
+            <th scope="col">tokens across retina</th><th scope="col">attention cost</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr><td>MANTIS today</td><td>512 × 512</td><td>16 × 16</td><td>1,024</td><td>62</td><td>4.7</td><td>1×</td></tr>
+          <tr><td>anisotropic, no crop</td><td>512 × 512</td><td>8 × 16</td><td>2,048</td><td>31</td><td>9.4</td><td>4×</td></tr>
+          <tr class="pick"><td>flatten + crop + anisotropic</td><td>128 × 512</td><td>4 × 16</td><td>1,024</td><td>15.6</td><td>18.9</td><td>1×</td></tr>
+          <tr><td>naive fine grid</td><td>512 × 512</td><td>4 × 4</td><td>16,384</td><td>15.6</td><td>18.9</td><td>256×</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <div class="callout g rise">
+      <span class="h">The punchline</span>
+      <p>The last two rows deliver <strong>identical depth resolution</strong> — 15.6 µm per token, 18.9 tokens
+      across the retina. One of them costs exactly what we pay today. The other costs
+      <strong>256 times more</strong>. Resolution is bought by <em>not</em> spending tokens on vitreous and choroid,
+      never by brute force.</p>
+    </div>
+  </div>
+</section>
+
+
+<!-- ══════════════════════════════════════════════════ 5 ANISOTROPY ══ -->
+<section class="band alt" id="aniso">
+  <div class="wrap stack-lg">
+    <div class="row rise">
+    <div class="prose">
+      <p class="eyebrow b">5 · geometry</p>
+      <h2>Retinal layers are sheets, so patches shouldn’t be squares.</h2>
+      <p class="lead">A square patch encodes an assumption: that the image changes at the same rate in both
+      directions. On a macular B-scan that assumption is simply false.</p>
+      <p>Layers are near-horizontal sheets. Move <strong>down</strong> by three pixels and you have crossed from
+      ellipsoid zone into RPE — a different tissue. Move <strong>sideways</strong> by three pixels and essentially
+      nothing has changed. Information density is anisotropic, so the sampling should be too.</p>
+      <p>Hence <span class="num">4</span> pixels axially × <span class="num">16</span> laterally: fine where the
+      structure changes fast, coarse where it doesn't. Same token count, four times the depth resolution.</p>
+    </div>
+    <aside class="mnote b">
+      <p class="t">The chosen patch</p>
+      <dl>
+        <div class="r"><span class="l">axial (depth) extent</span><span class="n">4 px</span></div>
+        <div class="r"><span class="l">lateral (width) extent</span><span class="n">16 px</span></div>
+        <div class="r"><span class="l">depth covered per token</span><span class="n a">15.6 µm</span></div>
+        <div class="r"><span class="l">tokens across the retina</span><span class="n g">18.9</span></div>
+      </dl>
+    </aside>
+    </div>
+
+    <figure class="plate rise">
+      <div class="plate-body">
+        <svg id="fig-aniso" viewBox="0 0 900 400" role="img"
+             aria-label="A 16 by 16 square patch versus a 4 by 16 wide-short patch over the same layered tissue, showing how many layer boundaries fall inside each."></svg>
+      </div>
+      <figcaption><span class="fignum">Fig. 6</span>Same tissue, same token count. The square patch (left) contains
+      four layer boundaries and cannot tell you where any of them sit. The wide-short patch (right) contains one,
+      and its position within the token is unambiguous.</figcaption>
+    </figure>
+  </div>
+</section>
+
+
+<!-- ══════════════════════════════════════════════════ 6 SUB-PIXEL ══ -->
+<section class="band" id="subpixel">
+  <div class="wrap stack-lg">
+    <div class="row rise">
+    <div class="prose">
+      <p class="eyebrow">6 · output</p>
+      <h2>Sub-pixel precision has to be built into the output, not the input.</h2>
+      <p class="lead">Even at 15.6 µm per token we are roughly <span class="num">8×</span> coarser than the ~2 µm
+      of boundary precision that actually matters clinically. No patch size fixes that. So change what the model is
+      asked to produce.</p>
+      <p>The conventional approach predicts a <strong>mask</strong>: a one-pixel-wide painted line, from which a
+      boundary is extracted afterwards. That extraction quantises the answer to the pixel grid
+      <em>before anything is measured</em> — the error floor is baked in at ±½ pixel ≈ 2 µm, and in practice worse,
+      because the stair-steps also corrupt local slope and curvature.</p>
+      <p>The alternative is <span class="dfn">regression</span>: instead of classifying pixels, predict a number.
+      For every column <span class="num">x</span> of the B-scan, output a continuous decimal row position
+      <span class="num">y(x)</span> — “the ILM in this A-scan sits at row 132.43”. There is no grid to snap to.
+      The output is <strong>sub-pixel by construction</strong>.</p>
+    </div>
+    <aside class="mnote">
+      <p class="t">The precision gap</p>
+      <dl>
+        <div class="r"><span class="l">finest token depth on offer</span><span class="n">15.6 µm</span></div>
+        <div class="r"><span class="l">precision that matters clinically</span><span class="n a">~2 µm</span></div>
+        <div class="r"><span class="l">gap</span><span class="n">≈ 8×</span></div>
+        <div class="r"><span class="l">one image pixel</span><span class="n">3.9 µm</span></div>
+      </dl>
+      <p class="l">No patch size closes a gap this size. The output representation has to.</p>
+    </aside>
+    </div>
+
+    <figure class="plate rise">
+      <div class="plate-body">
+        <svg id="fig-subpixel" viewBox="0 0 900 410" role="img"
+             aria-label="A pixel grid with a stair-stepped mask boundary compared to a smooth continuous curve passing between pixel centres, with decimal row values labelled per column."></svg>
+      </div>
+      <figcaption><span class="fignum">Fig. 7</span>Same boundary, two output representations. The mask
+      (vermillion) can only ever say “row 133”. The regressed curve (green) says “row 132.43”, and passes between
+      pixel centres where the true boundary actually lies.</figcaption>
+    </figure>
+  </div>
+</section>
+
+
+<!-- ══════════════════════════════════════════════════ 7 DICE ══ -->
+<section class="band alt" id="dice">
+  <div class="wrap stack-lg">
+    <div class="row rise">
+    <div class="prose">
+      <p class="eyebrow v">7 · the crux</p>
+      <h2>Dice is a proxy, and for thin layers it is a bad one.</h2>
+      <p class="lead">The <span class="dfn">Dice coefficient</span> measures how much two pixel sets
+      <em>overlap</em>: twice the shared pixels divided by the total pixels in both. It is the default metric in
+      segmentation, and for a blob — a tumour, a cyst, a fluid pocket — it behaves sensibly.</p>
+      <p>For a structure one pixel wide it behaves pathologically, in <strong>both directions</strong>:</p>
+      <ul style="margin:0; padding-left:1.15rem; display:flex; flex-direction:column; gap:.55rem">
+        <li>Shift a perfect one-pixel line down by <strong>2 pixels</strong> and the overlap goes to nearly zero.
+        Dice collapses toward 0 — while the boundary is <span class="num">7.8 µm</span> off, which is clinically
+        almost right.</li>
+        <li>Predict a <strong>thick band</strong> that comfortably contains the true line and Dice looks respectable
+        — while the <em>edge</em> you would actually measure from sits several microns away.</li>
+      </ul>
+      <p>Dice rewards being roughly in the right region. Layer analysis needs the boundary to be in the right
+      <em>place</em>. Those are different questions.</p>
+    </div>
+    <aside class="mnote v">
+      <p class="t">What we actually measured</p>
+      <dl>
+        <div class="r"><span class="l">validation Dice</span><span class="n">0.585</span></div>
+        <div class="r"><span class="l">validation F1</span><span class="n">0.833</span></div>
+        <div class="r"><span class="l">boundary error, MANTIS</span><span class="n v">8.50 µm</span></div>
+        <div class="r"><span class="l">boundary error, legacy system</span><span class="n g">6.14 µm</span></div>
+      </dl>
+      <p class="l">The top two are training metrics. The bottom two are the clinical claim — and they disagree.</p>
+    </aside>
+    </div>
+
+    <figure class="plate rise">
+      <div class="plate-body">
+        <svg id="fig-dice" viewBox="0 0 900 415" role="img"
+             aria-label="Two predictions against the same one-pixel-wide ground truth: a 2-pixel displaced line with near-zero Dice but small micron error, and a thick band with high Dice but a displaced edge."></svg>
+      </div>
+      <figcaption><span class="fignum">Fig. 8</span>Two failures of the same metric. Left: nearly correct in
+      microns, near-zero in Dice. Right: healthy Dice, wrong edge. Overlap and displacement are not the same
+      measurement.</figcaption>
+    </figure>
+
+    <div class="prose wide rise">
+      <h3>This is not hypothetical — it happened here</h3>
+      <p>During training, the metrics looked strong. On the held-out clinical gold-standard set, measured in
+      microns against expert boundaries, MANTIS was <em>worse than the legacy system it was meant to
+      replace</em>.</p>
+    </div>
+
+    <figure class="plate rise">
+      <div class="plate-body">
+        <svg id="fig-evidence" viewBox="0 0 900 260" role="img"
+             aria-label="Validation Dice 0.585 and F1 0.833 shown beside gold-standard boundary error: 8.50 micrometres for MANTIS versus 6.14 for the legacy system."></svg>
+      </div>
+      <figcaption><span class="fignum">Fig. 9</span>What the training metric reported versus what the micron ruler
+      reported, same model. Lower is better on the right-hand panel.</figcaption>
+    </figure>
+
+    <div class="callout rise" style="border-left-color:var(--verm); background:var(--tint-verm)">
+      <span class="h">Why this matters for the paper</span>
+      <p>Dice and boundary error are not two views of one quantity — they are different measurements that can move
+      in opposite directions. Only microns are a clinical claim. Dice is a training convenience that happens to be
+      differentiable.</p>
+    </div>
+  </div>
+</section>
+
+
+<!-- ══════════════════════════════════════════════════ 8 VMT ══ -->
+<section class="band" id="vmt">
+  <div class="wrap stack-lg">
+    <div class="row rise">
+    <div class="prose">
+      <p class="eyebrow b">8 · context</p>
+      <h2>The pathology you care about often sits outside the crop.</h2>
+      <p class="lead">Cropping tightly to the retina is what makes the token budget work. It is also, taken alone,
+      clinically naive.</p>
+      <p>In <strong>vitreomacular traction</strong>, the posterior vitreous separates from the retina peripherally
+      but remains adherent at the macula, and pulls on it. The diagnostic evidence — the taut hyaloid membrane, its
+      insertion point, the angle of the pull — lives <strong>above the ILM</strong>, in exactly the band of vitreous
+      a tight retinal crop discards. The same argument applies below Bruch's membrane, where choroidal thickness and
+      structure carry their own signal.</p>
+      <p>So the design is <strong>two branches</strong>, not one crop: a fine, retina-focused branch that buys
+      boundary precision, running alongside a coarse whole-image branch (patch 32) that keeps the vitreous, the
+      choroid and the global geometry in view. Precision and context are different jobs; give each its own
+      resolution.</p>
+    </div>
+    <aside class="mnote b">
+      <p class="t">Two branches, two jobs</p>
+      <dl>
+        <div class="r"><span class="l">fine branch input</span><span class="n g">128 × 512</span></div>
+        <div class="r"><span class="l">fine branch patch</span><span class="n">4 × 16</span></div>
+        <div class="r"><span class="l">coarse branch input</span><span class="n">whole scan</span></div>
+        <div class="r"><span class="l">coarse branch patch</span><span class="n">32</span></div>
+      </dl>
+      <p class="l">The crop is what makes precision affordable. The second branch is what stops the crop from being blind.</p>
+    </aside>
+    </div>
+
+    <figure class="plate rise">
+      <div class="plate-body">
+        <svg id="fig-vmt" viewBox="0 0 900 400" role="img"
+             aria-label="A B-scan schematic with vitreomacular traction: the adherent posterior hyaloid above the fovea sits in the vitreous band that a tight retinal crop would discard."></svg>
+      </div>
+      <figcaption><span class="fignum">Fig. 10</span>Vitreomacular traction. The taut hyaloid and its foveal
+      insertion sit entirely inside the band a tight crop throws away — as does the choroid below Bruch's
+      membrane.</figcaption>
+    </figure>
+
+    <figure class="plate rise">
+      <div class="plate-body">
+        <svg id="fig-branch" viewBox="0 0 900 250" role="img"
+             aria-label="Two-branch architecture: a fine flattened-and-cropped branch with 4 by 16 patches for precision, and a coarse whole-image branch with patch 32 for context, fused into one prediction."></svg>
+      </div>
+      <figcaption><span class="fignum">Fig. 11</span>The proposed two-branch design. One branch is optimised for
+      where the boundary is; the other for what surrounds it.</figcaption>
+    </figure>
+  </div>
+</section>
+
+
+<!-- ══════════════════════════════════════════════════ 9 MoE ══ -->
+<section class="band alt" id="moe">
+  <div class="wrap stack-lg">
+    <div class="row rise">
+    <div class="prose">
+      <p class="eyebrow">9 · capacity</p>
+      <h2>Mixture of Experts: eight sub-specialists, two consulted per token.</h2>
+      <p class="lead">Everything above is about what a token <em>is</em>. This section is about what happens to it
+      <em>inside</em> the network — and it covers the one structural choice in MANTIS whose value we have not yet
+      demonstrated.</p>
+      <p>Inside a transformer, each block does two things to every token: <span class="dfn">attention</span>, which
+      lets tokens look at each other, and then a <span class="dfn">feed-forward network</span> — a small two-layer
+      network applied to each token on its own, which is where most of the block's parameters and most of its
+      computation live. In a standard block there is <strong>one</strong> such network and <strong>every</strong>
+      token goes through it.</p>
+      <p>A <span class="dfn">Mixture-of-Experts</span> block (MoE) replaces that single network with several
+      parallel copies, called <span class="dfn">experts</span>, plus a small scoring network called the
+      <span class="dfn">router</span>. The router reads each token, scores the experts, and sends the token through
+      only the highest-scoring few. The block's total capacity goes up — there are now eight networks' worth of
+      parameters to specialise — but <strong>no individual token pays for all eight</strong>.</p>
+      <p>The clinical analogy is unusually exact. One generalist seeing every patient in the building is the
+      standard block. A clinic with eight sub-specialists and a triage nurse at the door, sending each patient to
+      the two most relevant rooms, is the MoE block. The building holds far more expertise; each patient still only
+      sits in two rooms.</p>
+    </div>
+    <aside class="mnote">
+      <p class="t">OctMoE — as configured in MANTIS</p>
+      <dl>
+        <div class="r"><span class="l">experts per block</span><span class="n">8</span></div>
+        <div class="r"><span class="l">experts run per token</span><span class="n a">top-2</span></div>
+        <div class="r"><span class="l">routing</span><span class="n">hard</span></div>
+        <div class="r"><span class="l">expert rank</span><span class="n">32</span></div>
+        <div class="r"><span class="l">load-balance loss weight</span><span class="n">0.01</span></div>
+        <div class="r"><span class="l">router conditioned on</span><span class="n">task family</span></div>
+      </dl>
+      <p class="l">Task families in use: <span class="u-blue">layer</span> for the retinal-layer heads,
+      <span class="u-verm">fluid</span> and <span class="u-verm">material</span> for the fluid and material heads.</p>
+    </aside>
+    </div>
+
+    <figure class="plate rise">
+      <div class="plate-body">
+        <svg id="fig-moe" viewBox="0 0 900 400" role="img"
+             aria-label="Left: a standard transformer block where every token passes through one feed-forward network. Right: a mixture-of-experts block where a router scores eight experts and each token is sent through only the two highest-scoring ones, leaving six idle."></svg>
+      </div>
+      <figcaption><span class="fignum">Fig. 12</span>Top-2 of 8. The router scores all eight experts for this
+      token; the two highest-scoring ones run, the other six are skipped entirely. A different token, one patch
+      further along the B-scan, may well be routed somewhere else. Schematic — the scores shown are illustrative,
+      not measured.</figcaption>
+    </figure>
+
+    <div class="prose wide rise">
+      <h3>Reading the configuration line by line</h3>
+      <p><strong>8 experts, top-2.</strong> Each token is passed through the two best-scoring experts and their
+      outputs are combined. Capacity scales with 8; per-token cost scales with 2.</p>
+      <p><strong>Hard routing.</strong> A token is either sent to an expert or it is not — there is no soft blend
+      of all eight in fixed proportions. That is what makes the saving real rather than notional, and it is also
+      what makes the router's decisions worth inspecting: they are discrete choices you could tabulate.</p>
+      <p><strong>Expert rank 32.</strong> The experts are <span class="dfn">low-rank</span> updates — rank 32,
+      in the same LoRA style MANTIS uses elsewhere — rather than eight full-size copies of the feed-forward
+      network. <span class="dfn">LoRA</span> (low-rank adaptation) means training a small, narrow correction on top
+      of frozen weights instead of rewriting them. This is what makes eight experts affordable at all: the block
+      does not become eight times larger.</p>
+      <p><strong>Router conditioned on task family.</strong> The router is told which <em>kind</em> of problem it
+      is being asked about — <code style="font-family:var(--f-mono);font-size:.9em">layer</code> for the retinal
+      layer heads, <code style="font-family:var(--f-mono);font-size:.9em">fluid</code> or
+      <code style="font-family:var(--f-mono);font-size:.9em">material</code> for the fluid and material heads —
+      before it scores anything. The next section is about why that distinction was worth encoding.</p>
+    </div>
+
+    <div class="row rise">
+    <div class="prose">
+      <h3>Why there is an extra loss whose only job is keeping the experts busy</h3>
+      <p>Routing has a well-known failure mode. Early in training one or two experts are, by luck, slightly better
+      than the rest. The router sends more tokens to them, so they get more gradient, so they get better still, so
+      the router sends them more. Within a few epochs the routing has <strong>collapsed</strong>: two experts do
+      essentially all the work and the other six are never selected, never trained, and never worth their
+      parameters. You are paying for eight and getting two.</p>
+      <p>The fix is a small extra term added to the training objective — the <span class="dfn">load-balance
+      loss</span> — which penalises uneven expert usage across a batch. It does not tell the router
+      <em>which</em> expert to pick; it only pushes the overall distribution of picks toward even. In MANTIS it
+      carries a weight of <span class="num">0.01</span>: deliberately small, because it is a housekeeping
+      constraint, not the thing we are actually trying to learn.</p>
+    </div>
+    <aside class="mnote v">
+      <p class="t">Even share, top-2 of 8</p>
+      <dl>
+        <div class="r"><span class="l">routing slots per token</span><span class="n">2</span></div>
+        <div class="r"><span class="l">experts available</span><span class="n">8</span></div>
+        <div class="r"><span class="l">even share per expert</span><span class="n g">25%</span></div>
+        <div class="r"><span class="l">collapsed: two experts take</span><span class="n v">≈ 90%</span></div>
+      </dl>
+      <p class="l">The load-balance loss is the only thing standing between the second column of Fig. 13 and the first.</p>
+    </aside>
+    </div>
+
+    <figure class="plate rise">
+      <div class="plate-body">
+        <svg id="fig-balance" viewBox="0 0 900 362" role="img"
+             aria-label="Two bar charts of the share of tokens each of eight experts receives. Left, collapsed routing: two experts take almost everything and six are near zero. Right, balanced routing: all eight sit near the even share of 25 percent."></svg>
+      </div>
+      <figcaption><span class="fignum">Fig. 13</span>Schematic illustration of the failure mode, not measured
+      data. With top-2 of 8, an even share is 25% of tokens per expert. Left: without the balancing term, two
+      experts absorb almost every token and six are effectively dead. Right: with it, all eight stay in use and
+      all eight keep learning.</figcaption>
+    </figure>
+  </div>
+</section>
+
+
+<!-- ══════════════════════════════════════════════════ 10 LAYERS vs FLUID ══ -->
+<section class="band" id="tasks">
+  <div class="wrap stack-lg">
+    <div class="row rise">
+    <div class="prose">
+      <p class="eyebrow v">10 · two problems</p>
+      <h2>Layers and fluid are not two versions of one task. They are two tasks.</h2>
+      <p class="lead">This is the reason the router is conditioned on a task family, and it is worth being blunt
+      about, because the two problems look superficially alike — both are called "segmentation", both are scored
+      with Dice, both run on the same B-scans — and they share almost nothing underneath.</p>
+      <p><strong>Retinal layers</strong> — ILM, ONL, EZ, RPE, BM — are <em>always there</em>. Every column of
+      every B-scan crosses all five, in that order, top to bottom. They are thin (1–4 pixels), continuous,
+      near-horizontal sheets. Because the ordering is an anatomical fact rather than a statistical tendency, it is
+      a constraint you can rely on: the EZ cannot appear above the ONL. And because each boundary crosses each
+      column exactly once, the task is essentially <strong>one-dimensional</strong> — for every A-scan column,
+      output one row position. There is no class-imbalance problem, and no question of presence or absence.</p>
+      <p><strong>Fluid and material</strong> — SRF (subretinal fluid), IRF (intraretinal fluid), cystic IRF, SRM
+      (subretinal material), sub-RPE fluid — behave in the opposite way on every one of those points. They are
+      often <em>completely absent</em>: on many B-scans there is nothing to segment at all. Where present, they
+      are irregular two-dimensional blobs of variable number, size and position, with no ordering constraint to
+      lean on. The task is <strong>two-dimensional region detection and delineation</strong>, plus a prior
+      question the layer task never has to ask — <em>is there anything here?</em> And it is severely
+      class-imbalanced: the overwhelming majority of pixels, and often entire slices, are background.</p>
+      <p>Even the <em>useful</em> kind of expert specialisation differs. For layers you would want experts that
+      specialise by pathology, device or retinal region — the same five sheets, seen under different conditions.
+      For fluid you would want experts that specialise by lesion type and appearance, and you need the model to be
+      able to answer "nothing here" without embarrassment.</p>
+    </div>
+    <aside class="mnote v">
+      <p class="t">The asymmetry, in one column</p>
+      <dl>
+        <div class="r"><span class="l">layers present per B-scan</span><span class="n g">always 5</span></div>
+        <div class="r"><span class="l">fluid present per B-scan</span><span class="n v">0 or more</span></div>
+        <div class="r"><span class="l">layer task dimensionality</span><span class="n">1-D</span></div>
+        <div class="r"><span class="l">fluid task dimensionality</span><span class="n">2-D</span></div>
+        <div class="r"><span class="l">layer ordering constraint</span><span class="n g">strict</span></div>
+        <div class="r"><span class="l">fluid ordering constraint</span><span class="n v">none</span></div>
+      </dl>
+      <p class="l">One task asks <em>where</em>. The other asks <em>whether</em>, and only then <em>where</em>.</p>
+    </aside>
+    </div>
+
+    <figure class="plate rise">
+      <div class="plate-body">
+        <svg id="fig-tasks" viewBox="0 0 900 460" role="img"
+             aria-label="Left: a B-scan with five ordered layer boundaries and a vertical probe column showing one answer per boundary per column. Right: the same B-scan with irregular subretinal and intraretinal fluid blobs, and beneath it an adjacent slice containing no fluid at all."></svg>
+      </div>
+      <figcaption><span class="fignum">Fig. 14</span>The same anatomy, two problems. Left: five sheets, always
+      present, strictly ordered — probe any column and you get five numbers, in a known order. Right: blobs of
+      variable number and shape that may simply not be there. The inset beneath is the adjacent slice from the
+      same volume, with no fluid on it at all — a case the layer task never encounters.</figcaption>
+    </figure>
+
+    <div class="tablewrap rise">
+      <table class="cmp">
+        <caption style="position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0)">Structural differences between the layer task and the fluid and material task</caption>
+        <thead>
+          <tr><th scope="col"></th>
+            <th scope="col" class="c-layer">retinal layers — ILM, ONL, EZ, RPE, BM</th>
+            <th scope="col" class="c-fluid">fluid &amp; material — SRF, IRF, cystic IRF, SRM, sub-RPE</th></tr>
+        </thead>
+        <tbody>
+          <tr><td>presence</td><td>in every column of every B-scan; never absent</td><td>often completely absent — many B-scans contain none</td></tr>
+          <tr><td>shape</td><td>thin sheets, 1–4 px, continuous, near-horizontal</td><td>irregular 2-D blobs; variable number, size and position</td></tr>
+          <tr><td>ordering</td><td>strict, anatomical: ILM &gt; ONL &gt; EZ &gt; RPE &gt; BM</td><td>none — a lesion can sit anywhere, in any combination</td></tr>
+          <tr><td>the task</td><td>1-D: one boundary position per column</td><td>2-D: detect, delineate, and first decide whether anything is present</td></tr>
+          <tr><td>class balance</td><td>not an issue</td><td>severe — most pixels, and often whole slices, are background</td></tr>
+          <tr><td>useful specialisation</td><td>by pathology, device, retinal region</td><td>by lesion type and appearance — and the ability to say “nothing here”</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <div class="prose wide rise">
+      <h3>This is not a taxonomy exercise — the split is already wired into the pipeline</h3>
+      <p>Four places where the code itself has had to acknowledge that these are different problems:</p>
+    </div>
+
+    <div class="cards rise">
+      <div class="card">
+        <span class="n">CONSEQUENCE 1</span>
+        <h3>Skeletonisation is gated behind a layer check.</h3>
+        <p>Thinning a prediction to a one-pixel line and enforcing continuity along it is a sensible clean-up for a
+        sheet. On a fluid blob it is meaningless — you would be thinning a cyst to a thread. The post-processing
+        runs only when the structure type is a layer.</p>
+      </div>
+      <div class="card">
+        <span class="n">CONSEQUENCE 2</span>
+        <h3>Empty-mask handling matters only for fluid.</h3>
+        <p>Because most fluid slices are empty, empty masks have to be stratified across splits and protected
+        during sampling, or the model learns from a distorted picture of how often lesions occur. For layers there
+        are no empty masks, so none of that machinery applies.</p>
+      </div>
+      <div class="card">
+        <span class="n">CONSEQUENCE 3</span>
+        <h3>Per-column argmax is valid for layers and invalid for fluid.</h3>
+        <p>Taking the highest-scoring row in each column gives exactly one boundary per column — correct for a
+        layer, which always has exactly one. Apply it to fluid and it cannot express absence: it returns a lesion
+        pixel in every single column, hallucinating disease across the whole scan.</p>
+      </div>
+      <div class="card">
+        <span class="n">CONSEQUENCE 4</span>
+        <h3>The fluid heads carry a domain shift the layer heads do not.</h3>
+        <p>Every fluid head was trained on diabetic macular oedema data (the RUBY study) and then evaluated on
+        age-related macular degeneration. Different disease, different fluid morphology, different distribution.
+        The layer heads face no equivalent shift.</p>
+      </div>
+    </div>
+
+    <figure class="plate rise">
+      <div class="plate-body">
+        <svg id="fig-argmax" viewBox="0 0 900 400" role="img"
+             aria-label="Left: per-column argmax applied to a layer, returning one correct boundary pixel per column. Right: the same operation applied to a fluid mask, where only six of sixteen columns contain a lesion, yet argmax returns a lesion pixel in all sixteen — ten of them hallucinated."></svg>
+      </div>
+      <figcaption><span class="fignum">Fig. 15</span>The same extraction rule, applied to both tasks. Left: a layer
+      crosses every column exactly once, so “take the best row in this column” is always the right question.
+      Right: fluid occupies six of these sixteen columns — but argmax has no way to return <em>nothing</em>, so it
+      invents a lesion in the other ten.</figcaption>
+    </figure>
+
+    <div class="prose wide rise">
+      <h3>So does the Mixture of Experts actually help?</h3>
+      <p>The argument above is a good argument. It is not evidence. Here is what we can and cannot currently
+      claim.</p>
+    </div>
+
+    <div class="tiles rise">
+      <div class="tile"><span class="k">OPL · MoE on</span><span class="v" style="color:var(--t-verm)">0.4905</span><span class="s">best validation Dice, over 82 epochs</span></div>
+      <div class="tile"><span class="k">OPL · MoE off</span><span class="v" style="color:var(--t-green)">0.5000</span><span class="s">best validation Dice, over 83 epochs</span></div>
+      <div class="tile"><span class="k">Difference</span><span class="v">−0.0095</span><span class="s">MoE scored slightly lower — on one structure</span></div>
+      <div class="tile"><span class="k">Structures ablated</span><span class="v">1 of 16</span><span class="s">OPL only; no other on/off pair exists</span></div>
+    </div>
+
+    <div class="callout v wide rise">
+      <span class="tag">Unmeasured — read this before quoting the section above</span>
+      <span class="h">In this project, the benefit of Mixture of Experts is currently unmeasured.</span>
+      <p>The only on/off ablation we have is the <strong>OPL</strong> layer. With MoE, best validation Dice was
+      <span class="num">0.4905</span> over 82 epochs. Without MoE, <span class="num">0.5000</span> over 83 epochs.
+      <strong>MoE scored slightly lower.</strong></p>
+      <p>Three caveats matter, and none of them rescue the result. It is <strong>one structure</strong> out of
+      sixteen. The difference is <strong>0.0095</strong> — well inside the noise you would expect from two
+      training runs. And <strong>both runs used the flawed per-B-scan validation split</strong> — slices were
+      assigned to training or validation individually rather than by patient, so neighbouring slices of the same
+      eye sat on both sides of the split. That is leakage, and it inflates <em>both</em> numbers; neither is a
+      clean estimate of anything. It is the same class of problem as the training-metric-versus-microns gap in
+      section 7: the number on the dashboard is not measuring what you want it to measure.</p>
+      <p>To be exact about what this does and does not say: it is <strong>not</strong> evidence that MoE hurts. It
+      is evidence that <strong>we do not yet know whether it helps</strong>. A proper ablation — MoE on versus off,
+      across structures, on the corrected patient-grouped split — is outstanding work, and until it is run, the
+      routing architecture should be described in the paper as a design choice, not as a result.</p>
+    </div>
+  </div>
+</section>
+
+
+<!-- ══════════════════════════════════════════════════ REMEMBER ══ -->
+<section class="band alt">
+  <div class="wrap stack-lg">
+    <div class="prose rise">
+      <p class="eyebrow g">Summary</p>
+      <h2>The four things to remember</h2>
+    </div>
+    <div class="cards rise">
+      <div class="card">
+        <span class="n">ONE</span>
+        <h3>The model's smallest unit is a tile, not a pixel.</h3>
+        <p>At 16 × 16 that tile is 62 µm deep — thicker than ELM, EZ and RPE combined. Detail below that scale is
+        not destroyed, but nothing in training privileges it.</p>
+      </div>
+      <div class="card">
+        <span class="n">TWO</span>
+        <h3>Resolution is a budgeting problem.</h3>
+        <p>Flatten to Bruch's membrane, crop to 128 rows, use 4 × 16 patches: four times the depth resolution for
+        the same 1,024 tokens. The brute-force route to the same resolution costs 256× more.</p>
+      </div>
+      <div class="card">
+        <span class="n">THREE</span>
+        <h3>Dice is not a clinical measurement.</h3>
+        <p>MANTIS's val Dice 0.585 and F1 0.833 coexisted with 8.50 µm boundary error against a legacy system's
+        6.14 µm. Regress the boundary directly and report microns.</p>
+      </div>
+      <div class="card">
+        <span class="n">FOUR</span>
+        <h3>Layers and fluid are different tasks — and the routing that assumes so is unproven.</h3>
+        <p>Layers are always present, ordered and 1-D; fluid is often absent, unordered and 2-D. MANTIS routes on
+        that distinction with 8 experts, top-2. But the only ablation we have — OPL, 0.4905 with MoE against
+        0.5000 without, on a leaky split — measures nothing. Run it properly before claiming it.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+
+<!-- ══════════════════════════════════════════════════ GLOSSARY ══ -->
+<section class="band">
+  <div class="wrap stack">
+    <p class="eyebrow b">Terms used above</p>
+    <dl class="gloss">
+      <div><dt>B-scan</dt><dd>One cross-sectional OCT image; a volume is a stack of them.</dd></div>
+      <div><dt>patch</dt><dd>A square (or rectangular) tile of pixels — the unit the image is cut into.</dd></div>
+      <div><dt>token</dt><dd>One patch, once converted into numbers. The model's atom.</dd></div>
+      <div><dt>embedding</dt><dd>The list of 768 numbers describing one token.</dd></div>
+      <div><dt>attention</dt><dd>The operation comparing every token to every other; cost scales as tokens².</dd></div>
+      <div><dt>ViT-Base</dt><dd>The transformer size used here — 768-dimensional embeddings.</dd></div>
+      <div><dt>ILM</dt><dd>Inner limiting membrane — the retina's vitreous-facing surface.</dd></div>
+      <div><dt>BM</dt><dd>Bruch's membrane — the retina's outer boundary, beneath the RPE.</dd></div>
+      <div><dt>ELM</dt><dd>External limiting membrane — 1–2 px thick in these scans.</dd></div>
+      <div><dt>EZ</dt><dd>Ellipsoid zone — photoreceptor inner-segment band, 2–3 px.</dd></div>
+      <div><dt>RPE</dt><dd>Retinal pigment epithelium — 2–4 px.</dd></div>
+      <div><dt>flattening</dt><dd>Shifting each A-scan column so Bruch's membrane forms a straight line.</dd></div>
+      <div><dt>Dice</dt><dd>Overlap metric: 2 × shared pixels ÷ total pixels in both sets.</dd></div>
+      <div><dt>regression</dt><dd>Predicting a continuous number rather than a per-pixel class.</dd></div>
+      <div><dt>VMT</dt><dd>Vitreomacular traction — adherent posterior vitreous pulling on the macula.</dd></div>
+      <div><dt>MANTIS</dt><dd>This project's OCT model: VisionFM backbone + our continued pretraining on 3.2 M B-scans + our fine-tuning, with OctMoE and LoRA.</dd></div>
+      <div><dt>VisionFM</dt><dd>The published retinal foundation model MANTIS is built on.</dd></div>
+      <div><dt>feed-forward network</dt><dd>The small per-token network inside each transformer block, after attention.</dd></div>
+      <div><dt>Mixture of Experts</dt><dd>Replacing that one network with several parallel “experts” plus a router that picks between them.</dd></div>
+      <div><dt>expert</dt><dd>One of the parallel copies. MANTIS uses 8 per block, at rank 32.</dd></div>
+      <div><dt>router</dt><dd>The small scoring network that decides which experts each token goes through.</dd></div>
+      <div><dt>top-2 routing</dt><dd>Each token is sent through only the 2 highest-scoring experts, not all 8.</dd></div>
+      <div><dt>hard routing</dt><dd>A token is either sent to an expert or not — no soft blend of all of them.</dd></div>
+      <div><dt>load-balance loss</dt><dd>Extra training term penalising uneven expert usage. Weight 0.01 here.</dd></div>
+      <div><dt>routing collapse</dt><dd>The failure it prevents: a couple of experts take every token and the rest go untrained.</dd></div>
+      <div><dt>LoRA</dt><dd>Low-rank adaptation — fine-tuning via a small narrow correction instead of rewriting the weights.</dd></div>
+      <div><dt>task family</dt><dd>The label the router is conditioned on: <em>layer</em>, <em>fluid</em> or <em>material</em>.</dd></div>
+      <div><dt>SRF / IRF</dt><dd>Subretinal fluid / intraretinal fluid — 2-D lesions, frequently absent from a slice.</dd></div>
+      <div><dt>SRM</dt><dd>Subretinal material.</dd></div>
+      <div><dt>argmax</dt><dd>“Take the highest-scoring row.” Valid per column for layers; cannot express absence, so invalid for fluid.</dd></div>
+      <div><dt>ablation</dt><dd>Retraining with one component switched off to measure what it contributed.</dd></div>
+    </dl>
+  </div>
+</section>
+
+<footer>
+  <div class="wrap">
+    All measurements are from this project's gold-standard dataset and MANTIS training runs.<br>
+    Axial 3.9 µm/px · lateral ~5.7 µm/px · retina 75.5 px mean (p95 98.9 px) · val Dice 0.585 / F1 0.833 ·
+    gold-standard boundary error 8.50 µm (MANTIS) vs 6.14 µm (legacy).<br>
+    OctMoE as configured: 8 experts · top-2 · hard routing · expert rank 32 · load-balance weight 0.01 ·
+    router conditioned on task family (layer / fluid / material).<br>
+    Only MoE ablation on record: OPL, val Dice 0.4905 with MoE (82 epochs) vs 0.5000 without (83 epochs), both on
+    the per-B-scan split. Figures 12, 13 and 15 are schematic illustrations, not measured data.
+  </div>
+</footer>
+
+
+<script>
+(function(){
+"use strict";
+const SVGNS="http://www.w3.org/2000/svg";
+function el(tag,attrs,parent){
+  const n=document.createElementNS(SVGNS,tag);
+  if(attrs) for(const k in attrs){ if(attrs[k]!=null) n.setAttribute(k,attrs[k]); }
+  if(parent) parent.appendChild(n);
+  return n;
+}
+function txt(parent,x,y,s,cls,anchor,extra){
+  const t=el("text",{x:x,y:y,class:cls||"svg-lbl","text-anchor":anchor||"start"},parent);
+  if(extra) for(const k in extra) t.setAttribute(k,extra[k]);
+  t.textContent=s; return t;
+}
+function clear(n){ while(n.firstChild) n.removeChild(n.firstChild); }
+
+/* ============================================================
+   RETINAL ANATOMY GENERATOR
+   Produces layer bands for a schematic macular B-scan.
+   All diagrams share this so the anatomy stays consistent.
+   ============================================================ */
+const LAYERS=[
+  {id:"rnfl", name:"RNFL",  t:0.115, fill:"#C9D2DB", inner:true},
+  {id:"gcl",  name:"GCL",   t:0.095, fill:"#6E7883", inner:true},
+  {id:"ipl",  name:"IPL",   t:0.110, fill:"#AEB8C3", inner:true},
+  {id:"inl",  name:"INL",   t:0.100, fill:"#616B76", inner:true},
+  {id:"opl",  name:"OPL",   t:0.080, fill:"#A8B3BE", inner:true},
+  {id:"onl",  name:"ONL",   t:0.230, fill:"#464F5A", onl:true},
+  {id:"elm",  name:"ELM",   t:0.030, fill:"#D2DAE2"},
+  {id:"myo",  name:"myoid", t:0.040, fill:"#525C67"},
+  {id:"ez",   name:"EZ",    t:0.045, fill:"#F0CE85"},
+  {id:"iz",   name:"IZ",    t:0.035, fill:"#5C6672"},
+  {id:"rpe",  name:"RPE",   t:0.070, fill:"#F2B93F"}
+];
+
+/* returns {x:[], bounds:[[y0..],[y1..],...]} — bounds[i] is the TOP of LAYERS[i];
+   bounds[LAYERS.length] is Bruch's membrane. */
+function retina(opts){
+  const o=Object.assign({n:140, x0:0, x1:900, bmY:250, thick:120, flat:false,
+                         curve:22, fovea:0.5, fw:0.16, traction:0},opts);
+  const xs=[], bounds=[]; for(let i=0;i<=LAYERS.length;i++) bounds.push([]);
+  for(let i=0;i<o.n;i++){
+    const f=i/(o.n-1), x=o.x0+f*(o.x1-o.x0);
+    xs.push(x);
+    const u=(f-o.fovea)/o.fw;
+    const g=1-Math.exp(-u*u);                 // 0 at fovea, ->1 peripherally
+    const bm=o.flat ? o.bmY : o.bmY - o.curve*Math.sin(Math.PI*f)*0.55 + o.curve*0.25*Math.cos(f*3.1);
+    // per-column thickness weights
+    let w=[], sum=0, onlIdx=0;
+    for(let k=0;k<LAYERS.length;k++){
+      const L=LAYERS[k];
+      let t=L.t;
+      if(L.inner) t*=Math.pow(g,1.25);        // inner layers vanish at the fovea
+      if(L.onl){ t*=(1+1.15*(1-g)); onlIdx=k; }// ONL thickens at the fovea
+      w.push(t); sum+=t;
+    }
+    const T=o.thick*(0.66+0.34*g)/sum;        // retina thinner at the fovea
+    const abs=w.map(function(v){ return v*T; });
+    // VMT: the inner retina is pulled anteriorly; BM and RPE stay put.
+    if(o.traction) abs[onlIdx]+=o.traction*Math.exp(-u*u*2.2);
+    let total=0; for(let k=0;k<abs.length;k++) total+=abs[k];
+    let y=bm-total;
+    for(let k=0;k<LAYERS.length;k++){ bounds[k].push(y); y+=abs[k]; }
+    bounds[LAYERS.length].push(bm);
+  }
+  return {xs:xs, b:bounds};
+}
+function bandPath(R,k){
+  const xs=R.xs, top=R.b[k], bot=R.b[k+1];
+  let d="M"+xs[0].toFixed(2)+" "+top[0].toFixed(2);
+  for(let i=1;i<xs.length;i++) d+="L"+xs[i].toFixed(2)+" "+top[i].toFixed(2);
+  for(let i=xs.length-1;i>=0;i--) d+="L"+xs[i].toFixed(2)+" "+bot[i].toFixed(2);
+  return d+"Z";
+}
+function linePath(xs,ys){
+  let d="M"+xs[0].toFixed(2)+" "+ys[0].toFixed(2);
+  for(let i=1;i<xs.length;i++) d+="L"+xs[i].toFixed(2)+" "+ys[i].toFixed(2);
+  return d;
+}
+function drawRetina(parent,R,opts){
+  const o=opts||{};
+  const g=el("g",{opacity:o.opacity||1},parent);
+  for(let k=0;k<LAYERS.length;k++){
+    el("path",{d:bandPath(R,k), fill:LAYERS[k].fill, "shape-rendering":"geometricPrecision"},g);
+  }
+  return g;
+}
+function choroid(parent,R,depth,mottle){
+  const xs=R.xs, bm=R.b[LAYERS.length];
+  let d="M"+xs[0]+" "+bm[0];
+  for(let i=1;i<xs.length;i++) d+="L"+xs[i].toFixed(2)+" "+bm[i].toFixed(2);
+  d+="L"+xs[xs.length-1]+" "+(bm[bm.length-1]+depth)+"L"+xs[0]+" "+(bm[0]+depth)+"Z";
+  el("path",{d:d, fill:"#2A313B"},parent);
+  if(mottle!==false){
+    for(let i=0;i<34;i++){
+      const t=(i*0.61803)%1, x=xs[0]+t*(xs[xs.length-1]-xs[0]);
+      const yi=Math.min(xs.length-1,Math.round(t*(xs.length-1)));
+      el("ellipse",{cx:x.toFixed(1), cy:(bm[yi]+6+((i*7)%Math.max(4,depth-10))).toFixed(1),
+        rx:(6+(i%5)*3.5).toFixed(1), ry:(2.2+(i%3)).toFixed(1), fill:"#1E242C", opacity:.75},parent);
+    }
+  }
+}
+
+/* ============================================================
+   FIG 0 — HERO
+   ============================================================ */
+(function hero(){
+  const svg=document.getElementById("hero-scan"); if(!svg) return;
+  const W=1200,H=300;
+  el("rect",{x:0,y:0,width:W,height:H,fill:"var(--scan)"},svg);
+  // subtle vitreous speckle
+  for(let i=0;i<160;i++){
+    const x=(i*137.507)%W, y=((i*i*31)%1000)/1000*150;
+    el("circle",{cx:x.toFixed(1),cy:y.toFixed(1),r:(0.6+((i%4)*0.35)).toFixed(2),fill:"#1C2430"},svg);
+  }
+  const R=retina({n:180,x0:-20,x1:W+20,bmY:214,thick:96,curve:26,fovea:0.5,fw:0.15});
+  choroid(svg,R,86);
+  drawRetina(svg,R);
+  // patch grid: 16px patches on a 512-wide scan -> 32 columns. Scale to width.
+  const cell=W/32;
+  const grid=el("g",{stroke:"var(--on-amber)","stroke-width":.8,fill:"none"},svg);
+  const reduce=window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+  for(let c=0;c<=32;c++){
+    const l=el("line",{x1:c*cell,y1:0,x2:c*cell,y2:H,class:"gridline"},grid);
+    if(!reduce) l.style.animationDelay=(c*0.022)+"s";
+  }
+  const rows=Math.ceil(H/cell);
+  for(let r=0;r<=rows;r++){
+    const l=el("line",{x1:0,y1:r*cell,x2:W,y2:r*cell,class:"gridline"},grid);
+    if(!reduce) l.style.animationDelay=(0.25+r*0.05)+"s";
+  }
+  // highlight the patch row that lands on the outer retina
+  const hi=el("g",{},svg);
+  const rowY=Math.floor(200/cell)*cell;
+  [12,13,14,15,16,17,18,19].forEach(function(c,i){
+    const r=el("rect",{x:c*cell,y:rowY,width:cell,height:cell,fill:"var(--on-amber)","fill-opacity":0,
+      stroke:"var(--on-amber)","stroke-width":1.6},hi);
+    if(!reduce){
+      const a=el("animate",{attributeName:"fill-opacity",from:"0",to:"0.16",dur:"0.5s",
+        begin:(1.1+i*0.06)+"s",fill:"freeze"},r);
+      const b=el("animate",{attributeName:"stroke-opacity",from:"0",to:"1",dur:"0.5s",
+        begin:(1.1+i*0.06)+"s",fill:"freeze"},r);
+    }else{ r.setAttribute("fill-opacity",".16"); }
+  });
+})();
+
+/* ============================================================
+   FIG 1 — WORD TOKENS vs PATCH TOKENS
+   ============================================================ */
+(function figTokens(){
+  const svg=document.getElementById("fig-tokens"); if(!svg) return;
+  const g=el("g",{},svg);
+
+  // ---- LEFT: language
+  txt(g,0,16,"LANGUAGE MODEL","svg-lbl-hd");
+  txt(g,0,34,"one token ≈ one short word ≈ 4 characters","svg-lbl-sm");
+  const chips=["vit","reo","mac","ular"," trac","tion"," of"," the"," fov","ea"];
+  let x=0, y=58;
+  chips.forEach(function(s,i){
+    const w=s.length*8.6+16;
+    if(x+w>380){ x=0; y+=40; }
+    el("rect",{x:x,y:y,width:w,height:30,fill:"var(--tint-blue)",stroke:"var(--blue)","stroke-width":1},g);
+    txt(g,x+w/2,y+20,s,"svg-lbl",'middle',{fill:"var(--t-blue)"});
+    x+=w+6;
+  });
+  txt(g,0,y+56,"10 tokens","svg-lbl",null,{fill:"var(--t-blue)","font-weight":"600"});
+
+  // sentence rendered plainly beneath
+  txt(g,0,y+86,"“vitreomacular traction of the fovea”","svg-lbl-sm");
+
+  // divider
+  el("line",{x1:420,y1:0,x2:420,y2:310,stroke:"var(--line)","stroke-width":1},g);
+
+  // ---- RIGHT: vision
+  txt(g,452,16,"VISION TRANSFORMER","svg-lbl-hd");
+  txt(g,452,34,"one token = one 16 × 16 patch = 256 pixels","svg-lbl-sm");
+
+  const SX=452, SY=52, S=224;            // scan thumbnail
+  const clip=el("clipPath",{id:"clipTok"},svg);
+  el("rect",{x:SX,y:SY,width:S,height:S},clip);
+  const scan=el("g",{"clip-path":"url(#clipTok)"},g);
+  el("rect",{x:SX,y:SY,width:S,height:S,fill:"var(--scan)"},scan);
+  const R=retina({n:120,x0:SX-4,x1:SX+S+4,bmY:SY+150,thick:52,curve:14});
+  choroid(scan,R,70,false);
+  drawRetina(scan,R);
+  const cell=S/16;                        // show 16 columns for legibility
+  const grid=el("g",{stroke:"var(--on-amber)","stroke-width":.7,opacity:.5,fill:"none"},scan);
+  for(let i=0;i<=16;i++){
+    el("line",{x1:SX+i*cell,y1:SY,x2:SX+i*cell,y2:SY+S},grid);
+    el("line",{x1:SX,y1:SY+i*cell,x2:SX+S,y2:SY+i*cell},grid);
+  }
+  el("rect",{x:SX,y:SY,width:S,height:S,fill:"none",stroke:"var(--line-2)","stroke-width":1},g);
+  txt(g,SX,SY+S+16,"512 × 512 px  ÷ 16  →  32 × 32 grid  =  1,024 tokens","svg-lbl",null,{fill:"var(--t-amber)"});
+
+  // selected patch + magnifier
+  const pc=8, pr=9;
+  el("rect",{x:SX+pc*cell,y:SY+pr*cell,width:cell,height:cell,fill:"none",
+    stroke:"var(--on-amber)","stroke-width":2},g);
+  const MX=SX+S+58, MY=SY+18, M=118;
+  el("line",{x1:SX+(pc+1)*cell,y1:SY+pr*cell,x2:MX,y2:MY,stroke:"var(--amber)","stroke-width":1,"stroke-dasharray":"3 3"},g);
+  el("line",{x1:SX+(pc+1)*cell,y1:SY+(pr+1)*cell,x2:MX,y2:MY+M,stroke:"var(--amber)","stroke-width":1,"stroke-dasharray":"3 3"},g);
+  el("rect",{x:MX,y:MY,width:M,height:M,fill:"var(--scan)",stroke:"var(--amber)","stroke-width":2},g);
+  // 16x16 pixels inside
+  const p=M/16;
+  for(let r=0;r<16;r++) for(let c=0;c<16;c++){
+    const v=r<5?0.10:(r<7?0.62:(r<9?0.22:(r<12?0.95:0.30)));
+    const j=((r*31+c*17)%13)/13*0.14-0.07;
+    const lum=Math.max(0,Math.min(1,v+j));
+    const col= r>=12||(r>=7&&r<9) ? "rgb("+Math.round(240*lum+15)+","+Math.round(200*lum+15)+","+Math.round(110*lum+18)+")"
+                                  : "rgb("+Math.round(210*lum+12)+","+Math.round(220*lum+14)+","+Math.round(232*lum+18)+")";
+    el("rect",{x:MX+c*p,y:MY+r*p,width:p+0.4,height:p+0.4,fill:col},g);
+  }
+  txt(g,MX,MY+M+16,"16 × 16 = 256 pixels","svg-lbl",null,{fill:"var(--t-amber)"});
+  txt(g,MX,MY+M+32,"→ one 768-number vector","svg-lbl-sm");
+  txt(g,MX,MY-8,"ONE TOKEN","svg-lbl-sm",null,{fill:"var(--t-amber)","letter-spacing":".12em"});
+})();
+
+/* ============================================================
+   FIG 2 — EMBEDDING + PIPELINE
+   ============================================================ */
+(function figEmbed(){
+  const svg=document.getElementById("fig-embed"); if(!svg) return;
+  const g=el("g",{},svg);
+
+  // 256 dots
+  txt(g,0,14,"ONE PATCH","svg-lbl-sm",null,{"letter-spacing":".12em"});
+  const P=150, o=P/16;
+  for(let r=0;r<16;r++) for(let c=0;c<16;c++)
+    el("rect",{x:6+c*o,y:26+r*o,width:o-1.6,height:o-1.6,fill:"var(--blue)",opacity:.28+((r*c)%7)/16},g);
+  el("rect",{x:4,y:24,width:P,height:P,fill:"none",stroke:"var(--line-2)"},g);
+  txt(g,4,P+44,"256 numbers","svg-lbl",null,{"font-weight":"600"});
+  txt(g,4,P+60,"16 × 16 pixel values","svg-lbl-sm");
+
+  // arrow
+  const ax=180, ay=24+P/2;
+  el("line",{x1:ax,y1:ay,x2:ax+120,y2:ay,stroke:"var(--ink-3)","stroke-width":1.5,"marker-end":"url(#arrH)"},g);
+  const defs=el("defs",{},svg);
+  const mk=el("marker",{id:"arrH",viewBox:"0 0 10 10",refX:"9",refY:"5",markerWidth:"6",markerHeight:"6",orient:"auto"},defs);
+  el("path",{d:"M0 0L10 5L0 10Z",fill:"var(--ink-3)"},mk);
+  txt(g,ax+60,ay-12,"linear projection","svg-lbl",'middle');
+  txt(g,ax+60,ay+22,"a 768 × 256 matrix","svg-lbl-sm",'middle');
+
+  // 768 vector: 48 rows x 16 cols
+  const VX=330, VY=24, VW=110, VH=150, rr=48, cc=16;
+  const cw=VW/cc, ch=VH/rr;
+  for(let r=0;r<rr;r++) for(let c=0;c<cc;c++)
+    el("rect",{x:VX+c*cw,y:VY+r*ch,width:cw+0.3,height:ch+0.3,fill:"var(--amber)",
+      opacity:(0.18+(((r*13+c*7)%11)/11)*0.7).toFixed(2)},g);
+  el("rect",{x:VX,y:VY,width:VW,height:VH,fill:"none",stroke:"var(--line-2)"},g);
+  txt(g,VX,VY+VH+20,"768 numbers","svg-lbl",null,{"font-weight":"600",fill:"var(--t-amber)"});
+  txt(g,VX,VY+VH+36,"the token embedding","svg-lbl-sm");
+
+  el("rect",{x:VX+140,y:60,width:250,height:76,fill:"var(--tint-green)",stroke:"var(--green)","stroke-width":1},g);
+  txt(g,VX+152,82,"768 > 256","svg-lbl",null,{"font-weight":"600",fill:"var(--t-green)"});
+  txt(g,VX+152,100,"The map is over-complete.","svg-lbl-sm");
+  txt(g,VX+152,116,"Nothing is compressed away here.","svg-lbl-sm");
+
+  // ---- pipeline row
+  el("line",{x1:0,y1:212,x2:900,y2:212,stroke:"var(--line)"},g);
+  txt(g,0,236,"WHERE THE GRANULARITY ACTUALLY BITES","svg-lbl-sm",null,{"letter-spacing":".12em"});
+  const steps=[
+    ["32 × 32 grid","1,024 tokens"],
+    ["attention","token ↔ token only"],
+    ["decoder","upsamples ×16"],
+    ["512 × 512 output","per-pixel answer"]
+  ];
+  let sx=0;
+  steps.forEach(function(s,i){
+    const w=185;
+    el("rect",{x:sx,y:252,width:w,height:56,fill:i===1?"var(--tint-blue)":"var(--plate-2)",
+      stroke:i===1?"var(--blue)":"var(--line-2)","stroke-width":1},g);
+    txt(g,sx+12,274,s[0],"svg-lbl",null,{"font-weight":"600"});
+    txt(g,sx+12,292,s[1],"svg-lbl-sm");
+    if(i<3) el("line",{x1:sx+w+6,y1:280,x2:sx+w+28,y2:280,stroke:"var(--ink-3)","stroke-width":1.5,"marker-end":"url(#arrH)"},g);
+    sx+=w+36;
+  });
+  txt(g,0,330,"Sub-patch detail must ride inside a token vector and be decoded back out — the pretraining objective never explicitly rewards that.","svg-lbl-sm");
+})();
+
+/* ============================================================
+   FIG 3 — SCALE: patch vs layers
+   ============================================================ */
+(function figScale(){
+  const svg=document.getElementById("fig-scale"); if(!svg) return;
+  const g=el("g",{},svg);
+  const PXH=13;                     // display px per real image pixel (axial)
+  const X0=112, Y0=60, WID=250;     // magnified stack
+
+  txt(g,0,20,"OUTER RETINA, MAGNIFIED","svg-lbl-hd");
+  txt(g,0,36,"1 image pixel = 3.9 µm of depth","svg-lbl-sm");
+
+  const stack=[
+    {n:"ONL",    px:5,   fill:"#464F5A", note:""},
+    {n:"ELM",    px:1.5, fill:"#D2DAE2", note:"1–2 px"},
+    {n:"myoid",  px:2,   fill:"#525C67", note:""},
+    {n:"EZ",     px:2.5, fill:"#F0CE85", note:"2–3 px"},
+    {n:"IZ",     px:2,   fill:"#5C6672", note:""},
+    {n:"RPE",    px:3,   fill:"#F2B93F", note:"2–4 px"},
+    {n:"BM",     px:1,   fill:"#C8CFD8", note:""},
+    {n:"choroid",px:5,   fill:"#2A313B", note:""}
+  ];
+  const tot=stack.reduce(function(a,b){return a+b.px;},0);
+  el("rect",{x:X0,y:Y0,width:WID,height:PXH*tot,fill:"var(--scan)"},g);
+  let y=Y0;
+  stack.forEach(function(L){
+    const h=L.px*PXH;
+    el("rect",{x:X0,y:y,width:WID,height:h,fill:L.fill},g);
+    const mid=y+h/2+3.5;
+    if(L.n!=="myoid"&&L.n!=="IZ"){
+      txt(g,X0-12,mid,L.n,"svg-lbl",'end',{"font-weight":"600"});
+      if(L.note) txt(g,X0+WID+14,mid,L.note+" = "+(L.px*3.9).toFixed(1)+" µm","svg-lbl-sm");
+    }
+    y+=h;
+  });
+  for(let i=0;i<=tot;i++)
+    el("line",{x1:X0-5,y1:Y0+i*PXH,x2:X0,y2:Y0+i*PXH,stroke:"var(--line-2)","stroke-width":1},g);
+
+  // the 16 × 16 patch, drawn to scale
+  const PW=16*PXH, PH=16*PXH;
+  const px=X0+20, py=Y0+1.4*PXH;
+  el("rect",{x:px,y:py,width:PW,height:PH,fill:"var(--on-amber)","fill-opacity":.13,
+    stroke:"var(--on-amber)","stroke-width":2.5},g);
+  txt(g,X0,Y0+PXH*tot+26,"ONE 16 × 16 PATCH  =  62 µm of depth","svg-lbl",null,
+      {fill:"var(--t-amber)","font-weight":"600"});
+  txt(g,X0,Y0+PXH*tot+42,"ELM, EZ and RPE all fall inside it — the model cannot","svg-lbl-sm");
+  txt(g,X0,Y0+PXH*tot+56,"separate them below this granularity.","svg-lbl-sm");
+
+  // ---- right panel: whole retina = 4.7 patch-rows
+  const RX=560, RY=60, RW=300, RH=230;
+  el("line",{x1:520,y1:10,x2:520,y2:380,stroke:"var(--line)"},g);
+  txt(g,RX,20,"WHOLE RETINA, ILM → BM","svg-lbl-hd");
+  txt(g,RX,36,"same scan, zoomed out","svg-lbl-sm");
+  el("rect",{x:RX,y:RY,width:RW,height:RH,fill:"var(--scan)"},g);
+  const R=retina({n:120,x0:RX-4,x1:RX+RW+4,bmY:RY+168,thick:104,curve:14,fovea:.5,fw:.2});
+  choroid(g,R,70,false);
+  drawRetina(g,R);
+  // actual ILM and BM curves
+  el("path",{d:linePath(R.xs,R.b[0]),fill:"none",stroke:"var(--on-blue)","stroke-width":1.8},g);
+  el("path",{d:linePath(R.xs,R.b[LAYERS.length]),fill:"none",stroke:"var(--on-green)","stroke-width":1.8},g);
+  const last=R.xs.length-6;
+  txt(g,RX+RW-8,R.b[0][last]-8,"ILM","on-lbl",'end',{fill:"var(--on-blue)"});
+  txt(g,RX+RW-8,R.b[LAYERS.length][last]+16,"BM","on-lbl",'end',{fill:"var(--on-green)"});
+  // 4.7 patch-rows stacked across the peripheral retinal thickness
+  const colX=RX+24;
+  const top=R.b[0][12], bot=R.b[LAYERS.length][12], cellH=(bot-top)/4.7;
+  for(let i=0;i<5;i++){
+    const yy=top+i*cellH, hh=Math.min(cellH,bot-yy);
+    if(hh<=0.5) break;
+    el("rect",{x:colX,y:yy,width:cellH,height:hh,fill:"var(--on-amber)",
+      "fill-opacity":i===4?.06:.14,stroke:"var(--on-amber)","stroke-width":1.3,
+      "stroke-dasharray":i===4?"4 3":null},g);
+  }
+  el("line",{x1:colX+cellH/2,y1:top-4,x2:colX+cellH/2,y2:RY+46,stroke:"var(--on-amber)","stroke-width":1,"stroke-dasharray":"3 3"},g);
+  txt(g,colX+cellH/2+8,RY+26,"4.7 patch-rows","on-lbl",null,{fill:"var(--on-amber)"});
+  txt(g,colX+cellH/2+8,RY+42,"cover the whole retina","on-lbl");
+  txt(g,RX,RY+RH+26,"75.5 px  =  294 µm  mean thickness","svg-lbl",null,{"font-weight":"600"});
+  txt(g,RX,RY+RH+42,"p95 98.9 px · a 16-px patch is 62 µm deep","svg-lbl-sm");
+})();
+
+/* ============================================================
+   FIG 4 — CROP BUDGET
+   ============================================================ */
+(function figCrop(){
+  const svg=document.getElementById("fig-crop"); if(!svg) return;
+  const g=el("g",{},svg);
+  const defs=el("defs",{},svg);
+  const mk=el("marker",{id:"arrH2",viewBox:"0 0 10 10",refX:"9",refY:"5",markerWidth:"6",markerHeight:"6",orient:"auto"},defs);
+  el("path",{d:"M0 0L10 5L0 10Z",fill:"var(--ink-3)"},mk);
+
+  const H=310, Y0=64, SC=H/496, CW=140;
+  const LX=96, RX=536;                   // column left edges
+
+  function column(x,label,sub){
+    el("rect",{x:x,y:Y0,width:CW,height:H,fill:"var(--scan)",stroke:"var(--line-2)"},g);
+    txt(g,x,26,label,"svg-lbl-hd");
+    txt(g,x,42,sub,"svg-lbl-sm");
+    [0,124,248,372,496].forEach(function(r){
+      const yy=Y0+r*SC;
+      el("line",{x1:x-5,y1:yy,x2:x,y2:yy,stroke:"var(--line-2)"},g);
+      txt(g,x-9,yy+4,String(r),"svg-lbl-sm",'end');
+    });
+    txt(g,x-9,Y0-8,"row","svg-lbl-sm",'end');
+  }
+
+  // ---------- LEFT: unflattened
+  column(LX,"UNFLATTENED","496-row B-scan · the retina wanders");
+  // the median example, drawn in full
+  const Rm=retina({n:80,x0:LX-2,x1:LX+CW+2,bmY:Y0+300*SC,thick:88*SC,curve:7,fovea:.5,fw:.2});
+  choroid(g,Rm,70*SC,false);
+  drawRetina(g,Rm);
+  // the two extremes, as boundary outlines only
+  [[-59,"var(--on-blue)"],[66,"var(--on-blue)"]].forEach(function(p){
+    const R=retina({n:80,x0:LX-2,x1:LX+CW+2,bmY:Y0+(300+p[0])*SC,thick:88*SC,curve:7,fovea:.5,fw:.2});
+    el("path",{d:linePath(R.xs,R.b[0]),fill:"none",stroke:p[1],"stroke-width":1.3,"stroke-dasharray":"4 3",opacity:.9},g);
+    el("path",{d:linePath(R.xs,R.b[LAYERS.length]),fill:"none",stroke:"var(--on-green)","stroke-width":1.3,"stroke-dasharray":"4 3",opacity:.9},g);
+  });
+  // observed ranges as brackets to the right of the column
+  function rangeMark(y1,y2,col,tcol,label,sub){
+    const x=LX+CW+10;
+    el("path",{d:"M"+x+" "+y1+"h7v"+(y2-y1)+"h-7",fill:"none",stroke:col,"stroke-width":1.6},g);
+    txt(g,x+14,(y1+y2)/2-2,label,"svg-lbl",null,{fill:tcol,"font-weight":"600"});
+    txt(g,x+14,(y1+y2)/2+14,sub,"svg-lbl-sm");
+  }
+  rangeMark(Y0+41*SC, Y0+102*SC, "var(--blue)","var(--t-blue)","ILM topmost row","observed range 41 → 102");
+  rangeMark(Y0+233*SC,Y0+366*SC, "var(--green)","var(--t-green)","BM row","observed range 233 → 366");
+  // the crop a fixed window would need: rows 41 → 366
+  el("rect",{x:LX-6,y:Y0+41*SC,width:CW+12,height:325*SC,fill:"none",stroke:"var(--verm)","stroke-width":2.5},g);
+  el("path",{d:"M"+(LX-16)+" "+(Y0+41*SC)+"h-8v"+(325*SC)+"h8",fill:"none",stroke:"var(--verm)","stroke-width":1.6},g);
+  txt(g,LX-28,Y0+41*SC+325*SC/2-4,"325 rows","svg-lbl",'end',{fill:"var(--t-verm)","font-weight":"600"});
+  txt(g,LX-28,Y0+41*SC+325*SC/2+12,"66% of 496","svg-lbl-sm",'end');
+
+  // ---------- arrow
+  el("line",{x1:436,y1:Y0+H/2,x2:498,y2:Y0+H/2,stroke:"var(--ink-3)","stroke-width":1.5,"marker-end":"url(#arrH2)"},g);
+  txt(g,466,Y0+H/2-12,"flatten","svg-lbl",'middle',{"font-weight":"600"});
+  txt(g,466,Y0+H/2+22,"to BM","svg-lbl-sm",'middle');
+
+  // ---------- RIGHT: flattened
+  column(RX,"FLATTENED TO BRUCH’S MEMBRANE","every A-scan re-aligned · the retina holds still");
+  const RF=retina({n:80,x0:RX-2,x1:RX+CW+2,bmY:Y0+330*SC,thick:88*SC,curve:0,flat:true,fovea:.5,fw:.2});
+  choroid(g,RF,70*SC,false);
+  drawRetina(g,RF);
+  el("rect",{x:RX,y:Y0+232*SC,width:CW,height:128*SC,fill:"var(--on-green)","fill-opacity":.10},g);
+  el("rect",{x:RX-6,y:Y0+232*SC,width:CW+12,height:128*SC,fill:"none",stroke:"var(--green)","stroke-width":2.5},g);
+  el("path",{d:"M"+(RX+CW+12)+" "+(Y0+232*SC)+"h7v"+(128*SC)+"h-7",fill:"none",stroke:"var(--green)","stroke-width":1.6},g);
+  txt(g,RX+CW+26,Y0+232*SC+128*SC/2-12,"128 rows","svg-lbl",null,{fill:"var(--t-green)","font-weight":"600"});
+  txt(g,RX+CW+26,Y0+232*SC+128*SC/2+4,"covers every case","svg-lbl-sm");
+  txt(g,RX+CW+26,Y0+232*SC+128*SC/2+20,"368 rows freed for","svg-lbl-sm");
+  txt(g,RX+CW+26,Y0+232*SC+128*SC/2+34,"finer axial sampling","svg-lbl-sm");
+
+  txt(g,0,Y0+H+34,"The retina occupies only 76–99 of 496 rows (≈18%). Without flattening it is the retina’s position, not its size, that forces the big crop.","svg-lbl-sm");
+})();
+
+/* ============================================================
+   FIG 5 — INTERACTIVE CONFIG COMPARISON
+   ============================================================ */
+(function figCfg(){
+  const svg=document.getElementById("fig-cfg");
+  const bar=document.getElementById("cfg-switch");
+  const out=document.getElementById("cfg-readout");
+  if(!svg||!bar||!out) return;
+
+  const CFG=[
+    {k:"MANTIS today",       ax:512, lat:512, pa:16, pl:16, tok:"1,024",  um:"62",   across:"4.7",  cost:"1×",   pick:false},
+    {k:"anisotropic, no crop",ax:512, lat:512, pa:8,  pl:16, tok:"2,048",  um:"31",   across:"9.4",  cost:"4×",   pick:false},
+    {k:"flatten + crop + aniso",ax:128, lat:512, pa:4, pl:16, tok:"1,024", um:"15.6", across:"18.9", cost:"1×",   pick:true},
+    {k:"naive fine grid",    ax:512, lat:512, pa:4,  pl:4,  tok:"16,384", um:"15.6", across:"18.9", cost:"256×", pick:false}
+  ];
+  let cur=2;
+
+  CFG.forEach(function(c,i){
+    const b=document.createElement("button");
+    b.type="button"; b.textContent=c.k + (c.pick?"  ★":"");
+    b.setAttribute("aria-pressed", i===cur?"true":"false");
+    b.addEventListener("click",function(){ cur=i; render(); });
+    bar.appendChild(b);
+  });
+
+  function render(){
+    const c=CFG[cur];
+    Array.prototype.forEach.call(bar.children,function(b,i){ b.setAttribute("aria-pressed", i===cur?"true":"false"); });
+    clear(svg);
+    const g=el("g",{},svg);
+
+    // draw the input region scaled to a fixed lateral width
+    const DW=560, DX=170, DY=30;
+    const DH=DW*(c.ax/c.lat);
+    svg.setAttribute("viewBox","0 0 900 "+Math.round(DY+DH+52));
+    el("rect",{x:DX,y:DY,width:DW,height:DH,fill:"var(--scan)"},g);
+
+    const clipId="clipCfg";
+    let defs=el("defs",{},svg);
+    const cp=el("clipPath",{id:clipId},defs);
+    el("rect",{x:DX,y:DY,width:DW,height:DH},cp);
+    const inner=el("g",{"clip-path":"url(#"+clipId+")"},g);
+
+    if(c.ax===128){
+      const R=retina({n:110,x0:DX-4,x1:DX+DW+4,bmY:DY+DH*0.86,thick:DH*0.62,curve:0,flat:true,fovea:.5,fw:.17});
+      choroid(inner,R,DH*0.2,false); drawRetina(inner,R);
+    }else{
+      const R=retina({n:110,x0:DX-4,x1:DX+DW+4,bmY:DY+DH*0.60,thick:DH*0.155,curve:DH*0.05,fovea:.5,fw:.15});
+      choroid(inner,R,DH*0.28,false); drawRetina(inner,R);
+      // mark where the tight crop would be
+      el("rect",{x:DX,y:DY+DH*0.60-DH*0.20,width:DW,height:DH*0.26,fill:"none",
+        stroke:"var(--on-green)","stroke-width":1.2,"stroke-dasharray":"6 5",opacity:.8},inner);
+    }
+
+    // patch grid
+    const nCols=c.lat/c.pl, nRows=c.ax/c.pa;
+    const cw=DW/nCols, chh=DH/nRows;
+    const thin = nCols>64 || nRows>64;
+    const grid=el("g",{stroke:"var(--on-amber)","stroke-width":thin?0.35:0.8,
+      opacity:thin?.5:.62,fill:"none"},inner);
+    for(let i=0;i<=nCols;i++) el("line",{x1:DX+i*cw,y1:DY,x2:DX+i*cw,y2:DY+DH},grid);
+    for(let j=0;j<=nRows;j++) el("line",{x1:DX,y1:DY+j*chh,x2:DX+DW,y2:DY+j*chh},grid);
+
+    // highlight one patch
+    el("rect",{x:DX+Math.floor(nCols*0.30)*cw, y:DY+Math.floor(nRows*(c.ax===128?0.55:0.60))*chh,
+      width:cw, height:chh, fill:"var(--on-amber)","fill-opacity":.5,
+      stroke:"var(--on-ink)","stroke-width":1.2},inner);
+
+    el("rect",{x:DX,y:DY,width:DW,height:DH,fill:"none",stroke:"var(--line-2)"},g);
+
+    // dimension labels
+    txt(g,DX,DY-10,c.ax+" × "+c.lat+" input   ·   patch "+c.pa+" × "+c.pl,"svg-lbl-hd");
+    el("path",{d:"M"+(DX-16)+" "+DY+"h-8v"+DH+"h8",fill:"none",stroke:"var(--line-2)","stroke-width":1.2},g);
+    txt(g,DX-30,DY+DH/2+4,c.ax+" px","svg-lbl",'end');
+    txt(g,DX+DW+14,DY+DH/2+4,nRows+" patch-rows","svg-lbl",null,{fill:"var(--t-amber)"});
+    txt(g,DX+DW+14,DY+DH/2+20,nCols+" patch-cols","svg-lbl-sm");
+    txt(g,DX,DY+DH+24,c.pick?"★ the chosen design — same token count as today, four times the depth resolution"
+                            :(c.cost==="256×"?"every patch-row is the same 15.6 µm as the chosen design — but 16× as many of them, in both directions"
+                                             :"the retina still occupies a small fraction of the tokens"),
+        "svg-lbl",null,{fill:c.pick?"var(--t-green)":(c.cost==="256×"?"var(--t-verm)":"var(--ink-2)"),
+                        "font-weight":c.pick?"600":"400"});
+
+    const R2=[["tokens",c.tok],["microns per token (depth)",c.um+" µm"],["tokens across retina",c.across],["attention cost",c.cost]];
+    out.innerHTML="";
+    R2.forEach(function(r){
+      const d=document.createElement("div");
+      d.innerHTML='<span class="k">'+r[0]+'</span><span class="v">'+r[1]+'</span>';
+      if(r[0]==="attention cost"&&r[1]==="256×") d.querySelector(".v").style.color="var(--t-verm)";
+      if(r[0]==="attention cost"&&r[1]==="1×")   d.querySelector(".v").style.color="var(--t-green)";
+      out.appendChild(d);
+    });
+  }
+  render();
+})();
+
+/* ============================================================
+   FIG 6 — ANISOTROPY
+   ============================================================ */
+(function figAniso(){
+  const svg=document.getElementById("fig-aniso"); if(!svg) return;
+  const g=el("g",{},svg);
+  const PXH=11, X0=60, Y0=72, W=330;
+  const defs0=el("defs",{},svg);
+  [["arrVm","var(--verm)"],["arrBl","var(--blue)"]].forEach(function(p){
+    const m=el("marker",{id:p[0],viewBox:"0 0 10 10",refX:"9",refY:"5",markerWidth:"6",markerHeight:"6",orient:"auto"},defs0);
+    el("path",{d:"M0 0L10 5L0 10Z",fill:p[1]},m);
+  });
+
+  const stack=[
+    {n:"ONL",   px:4, fill:"#464F5A"},
+    {n:"ELM",   px:1.5, fill:"#D2DAE2"},
+    {n:"myoid", px:2, fill:"#525C67"},
+    {n:"EZ",    px:2.5, fill:"#F0CE85"},
+    {n:"IZ",    px:2, fill:"#5C6672"},
+    {n:"RPE",   px:3, fill:"#F2B93F"},
+    {n:"BM",    px:1, fill:"#C8CFD8"},
+    {n:"chor",  px:6, fill:"#3A424D"}
+  ];
+  function tissue(x0,label){
+    el("rect",{x:x0,y:Y0,width:W,height:PXH*22,fill:"var(--scan)"},g);
+    let y=Y0+PXH*1.5;
+    stack.forEach(function(L){
+      el("rect",{x:x0,y:y,width:W,height:L.px*PXH,fill:L.fill},g);
+      y+=L.px*PXH;
+    });
+    txt(g,x0,26,label,"svg-lbl-hd");
+    return Y0+PXH*1.5;
+  }
+
+  const topA=tissue(X0,"SQUARE PATCH  16 × 16");
+  const topB=tissue(X0+430,"WIDE-SHORT PATCH  4 × 16");
+
+  // square patch: 16 x 16 px
+  const sq=16*PXH;
+  el("rect",{x:X0+70,y:topA+1.2*PXH,width:sq,height:sq,fill:"var(--on-amber)","fill-opacity":.13,
+    stroke:"var(--on-amber)","stroke-width":2.5},g);
+  txt(g,X0+70,topA+1.2*PXH-8,"4 boundaries inside","on-lbl",null,{fill:"var(--on-amber)"});
+
+  // 4 x 16 patches: stack of four
+  const w4=16*PXH, h4=4*PXH;
+  for(let i=0;i<4;i++){
+    el("rect",{x:X0+430+70,y:topB+1.2*PXH+i*h4,width:w4,height:h4,
+      fill:i===2?"var(--on-amber)":"none","fill-opacity":i===2?.20:0,
+      stroke:"var(--on-amber)","stroke-width":i===2?2.5:1.2,"stroke-opacity":i===2?1:.6},g);
+  }
+  txt(g,X0+430+70,topB+1.2*PXH-8,"1 boundary per token","on-lbl",null,{fill:"var(--on-amber)"});
+
+  // annotations
+  const yb=Y0+PXH*22+28;
+  txt(g,X0,yb,"Depth: tissue identity changes every 2–3 px.","svg-lbl");
+  txt(g,X0,yb+16,"A square token cannot say where inside itself the","svg-lbl-sm");
+  txt(g,X0,yb+30,"EZ ends and the RPE begins.","svg-lbl-sm");
+  txt(g,X0+430,yb,"Width: tissue identity barely changes at all.","svg-lbl");
+  txt(g,X0+430,yb+16,"Sampling laterally at 16 px costs nothing;","svg-lbl-sm");
+  txt(g,X0+430,yb+30,"the freed budget goes into depth.","svg-lbl-sm");
+
+  // axes of change: depth is fast, width is slow
+  el("line",{x1:22,y1:Y0+20,x2:22,y2:Y0+150,stroke:"var(--verm)","stroke-width":2,"marker-end":"url(#arrVm)"},g);
+  txt(g,15,Y0+85,"depth: fast","svg-lbl",'middle',{transform:"rotate(-90 15 "+(Y0+85)+")",fill:"var(--t-verm)"});
+  el("line",{x1:X0,y1:Y0-14,x2:X0+120,y2:Y0-14,stroke:"var(--blue)","stroke-width":2,"marker-end":"url(#arrBl)"},g);
+  txt(g,X0+130,Y0-10,"width: slow","svg-lbl",null,{fill:"var(--t-blue)"});
+  el("line",{x1:X0+430,y1:Y0-14,x2:X0+550,y2:Y0-14,stroke:"var(--blue)","stroke-width":2,"marker-end":"url(#arrBl)"},g);
+  txt(g,X0+560,Y0-10,"width: slow","svg-lbl",null,{fill:"var(--t-blue)"});
+})();
+
+/* ============================================================
+   FIG 7 — SUB-PIXEL
+   ============================================================ */
+(function figSub(){
+  const svg=document.getElementById("fig-subpixel"); if(!svg) return;
+  const g=el("g",{},svg);
+  const C=34, COLS=22, ROWS=7, X0=60, Y0=56;
+
+  // true boundary y(x) in fractional rows
+  function trueY(i){ return 3.1 + 1.55*Math.sin((i/COLS)*Math.PI*1.35) - 0.45*(i/COLS); }
+
+  // grid
+  for(let r=0;r<ROWS;r++) for(let c=0;c<COLS;c++){
+    el("rect",{x:X0+c*C,y:Y0+r*C,width:C,height:C,fill:"var(--plate-2)",
+      stroke:"var(--line)","stroke-width":1},g);
+  }
+  // pixel centres
+  for(let r=0;r<ROWS;r++) for(let c=0;c<COLS;c++)
+    el("circle",{cx:X0+c*C+C/2,cy:Y0+r*C+C/2,r:1.4,fill:"var(--ink-3)",opacity:.5},g);
+
+  // mask: nearest-row cells
+  for(let c=0;c<COLS;c++){
+    const r=Math.round(trueY(c));
+    el("rect",{x:X0+c*C+1,y:Y0+r*C+1,width:C-2,height:C-2,fill:"var(--verm)","fill-opacity":.30,
+      stroke:"var(--verm)","stroke-width":1.2},g);
+  }
+  // stair-step boundary line along the top of the mask cells
+  let d="";
+  for(let c=0;c<COLS;c++){
+    const r=Math.round(trueY(c)), yy=Y0+r*C;
+    d += (c===0? "M"+(X0)+" "+yy : "L"+(X0+c*C)+" "+yy) + "L"+(X0+(c+1)*C)+" "+yy;
+  }
+  el("path",{d:d,fill:"none",stroke:"var(--verm)","stroke-width":3,"stroke-linejoin":"miter"},g);
+
+  // regressed smooth curve
+  const xs=[],ys=[];
+  for(let c=0;c<COLS;c++){ xs.push(X0+c*C+C/2); ys.push(Y0+trueY(c)*C+C/2); }
+  el("path",{d:linePath(xs,ys),fill:"none",stroke:"var(--green)","stroke-width":3,
+    "stroke-linecap":"round"},g);
+  [2,8,15].forEach(function(c){
+    el("circle",{cx:xs[c],cy:ys[c],r:5,fill:"var(--green)",stroke:"var(--plate)","stroke-width":2},g);
+    txt(g,xs[c]+9,ys[c]-9,"y = "+(trueY(c)+0.5).toFixed(2),"svg-lbl-sm",null,{fill:"var(--t-green)"});
+  });
+
+  // legends
+  txt(g,X0,22,"THE SAME BOUNDARY, TWO OUTPUT REPRESENTATIONS","svg-lbl-hd");
+  txt(g,X0,40,"one cell = one pixel = 3.9 µm of depth","svg-lbl-sm");
+
+  const LY=Y0+ROWS*C+30;
+  el("rect",{x:X0,y:LY-11,width:16,height:4,fill:"var(--verm)"},g);
+  txt(g,X0+24,LY-4,"MASK → then extract the boundary","svg-lbl",null,{"font-weight":"600",fill:"var(--t-verm)"});
+  txt(g,X0+24,LY+13,"Quantised to the pixel grid before anything is measured.","svg-lbl-sm");
+  txt(g,X0+24,LY+28,"Best possible answer: “row 133”. Error floor ≈ ±2 µm, and the","svg-lbl-sm");
+  txt(g,X0+24,LY+43,"stair-steps corrupt local slope and curvature too.","svg-lbl-sm");
+
+  el("rect",{x:X0+430,y:LY-11,width:16,height:4,fill:"var(--green)"},g);
+  txt(g,X0+454,LY-4,"REGRESS y(x) DIRECTLY","svg-lbl",null,{"font-weight":"600",fill:"var(--t-green)"});
+  txt(g,X0+454,LY+13,"One decimal row position per A-scan column.","svg-lbl-sm");
+  txt(g,X0+454,LY+28,"“The ILM in this column sits at row 132.43.”","svg-lbl-sm");
+  txt(g,X0+454,LY+43,"No grid to snap to — sub-pixel by construction.","svg-lbl-sm");
+})();
+
+/* ============================================================
+   FIG 8 — DICE PATHOLOGY
+   ============================================================ */
+(function figDice(){
+  const svg=document.getElementById("fig-dice"); if(!svg) return;
+  const g=el("g",{},svg);
+  const C=22, COLS=18, ROWS=9, Y0=62;
+  const tr=function(c){ return 3 + Math.round(1.6*Math.sin(c/COLS*Math.PI*1.1)); };
+
+  function panel(X0,title,mode){
+    for(let r=0;r<ROWS;r++) for(let c=0;c<COLS;c++)
+      el("rect",{x:X0+c*C,y:Y0+r*C,width:C,height:C,fill:"var(--plate-2)",stroke:"var(--line)","stroke-width":.8},g);
+
+    // prediction first, so the ground truth always stays readable on top
+    if(mode==="shift"){
+      for(let c=0;c<COLS;c++)
+        el("rect",{x:X0+c*C+1,y:Y0+(tr(c)+2)*C+1,width:C-2,height:C-2,fill:"var(--verm)","fill-opacity":.20,
+          stroke:"var(--verm)","stroke-width":2.4},g);
+    }else{
+      for(let c=0;c<COLS;c++)
+        for(let k=-1;k<=3;k++)
+          el("rect",{x:X0+c*C+1,y:Y0+(tr(c)+k)*C+1,width:C-2,height:C-2,fill:"var(--blue)","fill-opacity":.20,
+            stroke:k===-1?"var(--blue)":null,"stroke-width":k===-1?2.4:null},g);
+    }
+    // ground truth, one pixel wide
+    for(let c=0;c<COLS;c++)
+      el("rect",{x:X0+c*C+3.5,y:Y0+tr(c)*C+3.5,width:C-7,height:C-7,fill:"var(--ink)","fill-opacity":.9,
+        stroke:"var(--plate-2)","stroke-width":1.5},g);
+    txt(g,X0,26,title,"svg-lbl-hd");
+  }
+
+  panel(30,"A · SHIFTED BY 2 PIXELS","shift");
+  panel(490,"B · THICK BAND OVER THE TRUTH","band");
+
+  // the 2-pixel displacement, marked
+  el("path",{d:"M"+(30+COLS*C+8)+" "+(Y0+3*C+C/2)+"v"+(2*C),fill:"none",stroke:"var(--verm)","stroke-width":1.6},g);
+  txt(g,30+COLS*C+14,Y0+4*C+C/2,"2 px","svg-lbl-sm",null,{fill:"var(--t-verm)"});
+
+  const LY=Y0+ROWS*C+34;
+  txt(g,30,LY,"Dice → near 0","svg-lbl",null,{fill:"var(--t-verm)","font-weight":"600"});
+  txt(g,30,LY+17,"the two sets barely share a pixel","svg-lbl-sm");
+  txt(g,30,LY+40,"Boundary error: 2 px = 7.8 µm","svg-lbl",null,{fill:"var(--t-green)","font-weight":"600"});
+  txt(g,30,LY+57,"clinically, this tracing is nearly right","svg-lbl-sm");
+
+  txt(g,490,LY,"Dice → high","svg-lbl",null,{fill:"var(--t-blue)","font-weight":"600"});
+  txt(g,490,LY+17,"the truth is fully contained in the band","svg-lbl-sm");
+  txt(g,490,LY+40,"Edge sits several µm off","svg-lbl",null,{fill:"var(--t-verm)","font-weight":"600"});
+  txt(g,490,LY+57,"and the edge is what a thickness is measured from","svg-lbl-sm");
+
+  // key, on its own row
+  const KY=LY+92;
+  el("line",{x1:0,y1:KY-22,x2:900,y2:KY-22,stroke:"var(--line)"},g);
+  const key=[[0,"var(--ink)",.9,null,"ground truth — 1 pixel wide"],
+             [300,"var(--verm)",.20,"var(--verm)","prediction A — shifted 2 px"],
+             [600,"var(--blue)",.20,"var(--blue)","prediction B — thick band"]];
+  key.forEach(function(k){
+    el("rect",{x:k[0],y:KY-11,width:15,height:15,fill:k[1],"fill-opacity":k[2],
+      stroke:k[3],"stroke-width":k[3]?2:null},g);
+    txt(g,k[0]+23,KY+1,k[4],"svg-lbl-sm");
+  });
+})();
+
+/* ============================================================
+   FIG 9 — THE EVIDENCE
+   ============================================================ */
+(function figEvid(){
+  const svg=document.getElementById("fig-evidence"); if(!svg) return;
+  const g=el("g",{},svg);
+
+  // LEFT: what training said
+  txt(g,0,18,"WHAT TRAINING REPORTED","svg-lbl-hd");
+  txt(g,0,36,"held-out validation split, overlap metrics","svg-lbl-sm");
+  const stats=[["validation Dice","0.585"],["validation F1","0.833"]];
+  stats.forEach(function(s,i){
+    const y=64+i*74;
+    el("rect",{x:0,y:y,width:330,height:60,fill:"var(--tint-blue)",stroke:"var(--blue)","stroke-width":1},g);
+    txt(g,16,y+24,s[0],"svg-lbl-sm");
+    txt(g,16,y+48,s[1],"svg-lbl",null,{"font-size":"22px","font-weight":"600",fill:"var(--t-blue)"});
+    txt(g,320,y+48,"looks strong","svg-lbl-sm",'end');
+  });
+
+  el("line",{x1:400,y1:0,x2:400,y2:250,stroke:"var(--line)"},g);
+
+  // RIGHT: microns
+  txt(g,440,18,"WHAT THE MICRON RULER REPORTED","svg-lbl-hd");
+  txt(g,440,36,"clinical gold-standard set · mean boundary error · lower is better","svg-lbl-sm");
+  const bars=[
+    {n:"legacy system", v:6.14, col:"var(--green)", tcol:"var(--t-green)"},
+    {n:"MANTIS",        v:8.50, col:"var(--verm)",  tcol:"var(--t-verm)"}
+  ];
+  const BX=560, BW=250, MAXV=10;
+  bars.forEach(function(b,i){
+    const y=76+i*66, w=BW*(b.v/MAXV);
+    el("rect",{x:BX,y:y,width:w,height:30,fill:b.col,rx:0},g);
+    el("rect",{x:BX+w-4,y:y,width:4,height:30,fill:b.col,rx:2},g);
+    txt(g,BX-10,y+21,b.n,"svg-lbl",'end');
+    txt(g,BX+w+10,y+21,b.v.toFixed(2)+" µm","svg-lbl",null,{"font-weight":"600",fill:b.tcol});
+  });
+  // baseline + axis
+  el("line",{x1:BX,y1:66,x2:BX,y2:186,stroke:"var(--line-2)","stroke-width":1},g);
+  [0,5,10].forEach(function(v){
+    const x=BX+BW*(v/MAXV);
+    el("line",{x1:x,y1:180,x2:x,y2:186,stroke:"var(--line-2)"},g);
+    txt(g,x,200,String(v),"svg-lbl-sm",'middle');
+  });
+  txt(g,BX+BW/2,218,"mean boundary error (µm)","svg-lbl-sm",'middle');
+
+  txt(g,440,238,"Same model, same scans. The overlap metric looked healthy while the","svg-lbl-sm");
+  txt(g,440,252,"clinically meaningful measurement stayed worse than the legacy system.","svg-lbl-sm");
+})();
+
+/* ============================================================
+   FIG 10 — VMT
+   ============================================================ */
+(function figVMT(){
+  const svg=document.getElementById("fig-vmt"); if(!svg) return;
+  const g=el("g",{},svg);
+  const X0=40, Y0=40, W=620, H=320;
+
+  el("rect",{x:X0,y:Y0,width:W,height:H,fill:"var(--scan)"},g);
+  // vitreous speckle
+  for(let i=0;i<90;i++){
+    const x=X0+((i*137.5)%W), y=Y0+((i*i*17)%100)/100*120;
+    el("circle",{cx:x.toFixed(1),cy:y.toFixed(1),r:(0.6+((i%3)*0.4)).toFixed(2),fill:"#1E2530"},g);
+  }
+  const R=retina({n:150,x0:X0-4,x1:X0+W+4,bmY:Y0+238,thick:92,curve:16,fovea:.5,fw:.15,traction:16});
+  choroid(g,R,86);
+  drawRetina(g,R);
+
+  // posterior hyaloid: detached peripherally, adherent at fovea
+  const xs=[],ys=[];
+  const ilm=R.b[0];
+  for(let i=0;i<R.xs.length;i++){
+    const f=i/(R.xs.length-1), u=(f-0.5)/0.15;
+    const adh=Math.exp(-u*u*2.2);
+    const detach=64*(1-adh);
+    ys.push(ilm[i]-detach);
+    xs.push(R.xs[i]);
+  }
+  el("path",{d:linePath(xs,ys),fill:"none",stroke:"var(--on-blue)","stroke-width":2.6},g);
+  txt(g,X0+16,Y0+52,"posterior hyaloid — detached peripherally","on-lbl",null,{fill:"var(--on-blue)"});
+  txt(g,X0+W/2+26,Y0+72,"…still adherent at the fovea, and pulling","on-lbl",null,{fill:"var(--on-blue)"});
+  // traction arrow
+  el("line",{x1:X0+W/2,y1:Y0+150,x2:X0+W/2,y2:Y0+112,stroke:"var(--on-verm)","stroke-width":2.4,"marker-end":"url(#arrU)"},g);
+  const defs=el("defs",{},svg);
+  const mk=el("marker",{id:"arrU",viewBox:"0 0 10 10",refX:"9",refY:"5",markerWidth:"6",markerHeight:"6",orient:"auto"},defs);
+  el("path",{d:"M0 0L10 5L0 10Z",fill:"var(--on-verm)"},mk);
+
+  // the discarded bands
+  el("rect",{x:X0,y:Y0,width:W,height:118,fill:"var(--on-verm)","fill-opacity":.14},g);
+  el("rect",{x:X0,y:Y0+248,width:W,height:H-248,fill:"var(--on-verm)","fill-opacity":.14},g);
+  // the kept band
+  el("rect",{x:X0,y:Y0+118,width:W,height:130,fill:"none",stroke:"var(--on-green)","stroke-width":2.5},g);
+
+  txt(g,X0+W+14,Y0+64,"VITREOUS","svg-lbl",null,{fill:"var(--t-verm)","font-weight":"600"});
+  txt(g,X0+W+14,Y0+80,"discarded by a tight crop","svg-lbl-sm");
+  txt(g,X0+W+14,Y0+96,"— and the VMT signal","svg-lbl-sm");
+  txt(g,X0+W+14,Y0+98+16,"lives here","svg-lbl-sm");
+
+  txt(g,X0+W+14,Y0+178,"RETINA","svg-lbl",null,{fill:"var(--t-green)","font-weight":"600"});
+  txt(g,X0+W+14,Y0+194,"the 128-row crop","svg-lbl-sm");
+  txt(g,X0+W+14,Y0+210,"fine branch, 4 × 16","svg-lbl-sm");
+
+  txt(g,X0+W+14,Y0+282,"CHOROID","svg-lbl",null,{fill:"var(--t-verm)","font-weight":"600"});
+  txt(g,X0+W+14,Y0+298,"also discarded —","svg-lbl-sm");
+  txt(g,X0+W+14,Y0+314,"thickness carries signal","svg-lbl-sm");
+
+  txt(g,X0,26,"VITREOMACULAR TRACTION","svg-lbl-hd");
+})();
+
+/* ============================================================
+   FIG 11 — TWO-BRANCH
+   ============================================================ */
+(function figBranch(){
+  const svg=document.getElementById("fig-branch"); if(!svg) return;
+  const g=el("g",{},svg);
+  const defs=el("defs",{},svg);
+  const mk=el("marker",{id:"arrB",viewBox:"0 0 10 10",refX:"9",refY:"5",markerWidth:"6",markerHeight:"6",orient:"auto"},defs);
+  el("path",{d:"M0 0L10 5L0 10Z",fill:"var(--ink-3)"},mk);
+
+  // input
+  el("rect",{x:10,y:88,width:120,height:76,fill:"var(--scan)",stroke:"var(--line-2)"},g);
+  const R=retina({n:70,x0:8,x1:132,bmY:140,thick:26,curve:5});
+  choroid(g,R,26,false); drawRetina(g,R);
+  txt(g,10,80,"B-SCAN","svg-lbl-sm",null,{"letter-spacing":".12em"});
+  txt(g,10,180,"496 × 512","svg-lbl-sm");
+
+  function branch(y,title,lines,col,tint){
+    el("line",{x1:136,y1:126,x2:210,y2:y+40,stroke:"var(--ink-3)","stroke-width":1.5,"marker-end":"url(#arrB)"},g);
+    el("rect",{x:216,y:y,width:300,height:80,fill:tint,stroke:col,"stroke-width":1.5},g);
+    txt(g,232,y+26,title,"svg-lbl",null,{"font-weight":"600"});
+    lines.forEach(function(l,i){ txt(g,232,y+46+i*16,l,"svg-lbl-sm"); });
+    el("line",{x1:520,y1:y+40,x2:594,y2:126,stroke:"var(--ink-3)","stroke-width":1.5,"marker-end":"url(#arrB)"},g);
+  }
+  branch(16,"FINE BRANCH — precision",
+    ["flatten to BM, crop to 128 rows","patch 4 × 16 · 1,024 tokens · 15.6 µm per token"],
+    "var(--green)","var(--tint-green)");
+  branch(154,"COARSE BRANCH — context",
+    ["whole image, nothing discarded","patch 32 · vitreous, hyaloid, choroid, shape"],
+    "var(--blue)","var(--tint-blue)");
+
+  el("rect",{x:600,y:88,width:120,height:76,fill:"var(--plate-2)",stroke:"var(--line-2)"},g);
+  txt(g,616,120,"fuse","svg-lbl",null,{"font-weight":"600"});
+  txt(g,616,140,"one prediction","svg-lbl-sm");
+  el("line",{x1:726,y1:126,x2:788,y2:126,stroke:"var(--ink-3)","stroke-width":1.5,"marker-end":"url(#arrB)"},g);
+  txt(g,796,114,"y(x) per boundary","svg-lbl",null,{"font-weight":"600"});
+  txt(g,796,132,"in microns,","svg-lbl-sm");
+  txt(g,796,148,"sub-pixel","svg-lbl-sm");
+})();
+
+/* ============================================================
+   FIG 12 — DENSE BLOCK vs MIXTURE-OF-EXPERTS BLOCK
+   ============================================================ */
+(function figMoe(){
+  const svg=document.getElementById("fig-moe"); if(!svg) return;
+  const g=el("g",{},svg);
+  const defs=el("defs",{},svg);
+  [["arrM","var(--ink-3)"],["arrMa","var(--amber)"]].forEach(function(p){
+    const m=el("marker",{id:p[0],viewBox:"0 0 10 10",refX:"9",refY:"5",markerWidth:"6",markerHeight:"6",orient:"auto"},defs);
+    el("path",{d:"M0 0L10 5L0 10Z",fill:p[1]},m);
+  });
+
+  /* ---------- LEFT: the standard block ---------- */
+  txt(g,0,16,"STANDARD TRANSFORMER BLOCK","svg-lbl-hd");
+  txt(g,0,32,"one feed-forward network · every token","svg-lbl-sm");
+
+  ["t₁","t₂","t₃"].forEach(function(s,i){
+    const y=118+i*54;
+    el("rect",{x:2,y:y,width:28,height:28,fill:"var(--tint-amber)",stroke:"var(--amber)","stroke-width":1.2},g);
+    txt(g,16,y+19,s,"svg-lbl",'middle',{fill:"var(--t-amber)"});
+    el("line",{x1:34,y1:y+14,x2:84,y2:y+14,stroke:"var(--ink-3)","stroke-width":1.4,"marker-end":"url(#arrM)"},g);
+  });
+  txt(g,2,104,"tokens","svg-lbl-sm");
+
+  el("rect",{x:92,y:110,width:150,height:148,fill:"var(--plate-2)",stroke:"var(--line-2)","stroke-width":1.5},g);
+  txt(g,167,168,"FEED-FORWARD","svg-lbl",'middle',{"font-weight":"600"});
+  txt(g,167,186,"NETWORK","svg-lbl",'middle',{"font-weight":"600"});
+  txt(g,167,210,"every token,","svg-lbl-sm",'middle');
+  txt(g,167,224,"all of it, always","svg-lbl-sm",'middle');
+  el("line",{x1:246,y1:184,x2:288,y2:184,stroke:"var(--ink-3)","stroke-width":1.4,"marker-end":"url(#arrM)"},g);
+  txt(g,2,290,"Capacity is fixed. To hold more knowledge you","svg-lbl-sm");
+  txt(g,2,304,"must make this one network bigger — and then","svg-lbl-sm");
+  txt(g,2,318,"every token pays for the whole of it.","svg-lbl-sm");
+
+  el("line",{x1:318,y1:0,x2:318,y2:376,stroke:"var(--line)"},g);
+
+  /* ---------- RIGHT: the MoE block ---------- */
+  const RX=344;
+  txt(g,RX,16,"MIXTURE-OF-EXPERTS BLOCK  ·  OctMoE","svg-lbl-hd");
+  txt(g,RX,32,"8 experts · top-2 · hard routing","svg-lbl-sm");
+
+  // task-family tag feeding the router
+  el("rect",{x:RX,y:66,width:96,height:28,fill:"var(--tint-blue)",stroke:"var(--blue)","stroke-width":1,
+    "stroke-dasharray":"4 3"},g);
+  txt(g,RX+48,85,"task: layer","svg-lbl",'middle',{fill:"var(--t-blue)"});
+  el("line",{x1:RX+48,y1:96,x2:RX+48,y2:150,stroke:"var(--blue)","stroke-width":1.2,"stroke-dasharray":"4 3",
+    "marker-end":"url(#arrM)"},g);
+
+  // the token
+  el("rect",{x:RX-2,y:172,width:28,height:28,fill:"var(--tint-amber)",stroke:"var(--amber)","stroke-width":1.2},g);
+  txt(g,RX+12,191,"t","svg-lbl",'middle',{fill:"var(--t-amber)"});
+  txt(g,RX-2,164,"one token","svg-lbl-sm");
+  el("line",{x1:RX+30,y1:186,x2:RX+52,y2:186,stroke:"var(--ink-3)","stroke-width":1.4,"marker-end":"url(#arrM)"},g);
+
+  // the router
+  const rx=RX+58, ry=152, rw=76, rh=68;
+  el("rect",{x:rx,y:ry,width:rw,height:rh,fill:"var(--plate-2)",stroke:"var(--ink-3)","stroke-width":1.5},g);
+  txt(g,rx+rw/2,ry+28,"ROUTER","svg-lbl",'middle',{"font-weight":"600"});
+  txt(g,rx+rw/2,ry+46,"scores all 8","svg-lbl-sm",'middle');
+
+  // the eight experts
+  const EX=560, EW=152, EH=28, EY=52, ES=36;
+  const score=[0.06,0.09,0.31,0.05,0.11,0.26,0.07,0.05];   // illustrative
+  const chosen=[2,5];
+  for(let i=0;i<8;i++){
+    const y=EY+i*ES, on=chosen.indexOf(i)>=0;
+    // routing line
+    el("line",{x1:rx+rw,y1:ry+rh/2,x2:EX-4,y2:y+EH/2,
+      stroke:on?"var(--amber)":"var(--line-2)","stroke-width":on?2.2:0.8,
+      opacity:on?1:.45,"marker-end":on?"url(#arrMa)":null},g);
+    // box + score fill
+    el("rect",{x:EX,y:y,width:EW,height:EH,fill:"var(--plate-2)",
+      stroke:on?"var(--amber)":"var(--line-2)","stroke-width":on?2:1,opacity:on?1:.6},g);
+    el("rect",{x:EX,y:y,width:EW*(score[i]/0.34),height:EH,
+      fill:on?"var(--amber)":"var(--ink-3)","fill-opacity":on?.26:.12},g);
+    txt(g,EX+10,y+18,"expert "+(i+1),"svg-lbl",null,
+      {fill:on?"var(--t-amber)":"var(--ink-3)","font-weight":on?"600":"400"});
+    txt(g,EX+EW+10,y+18,on?"✓ runs":"idle","svg-lbl-sm",null,{fill:on?"var(--t-amber)":"var(--ink-3)"});
+    if(on){
+      el("line",{x1:EX+EW+52,y1:y+EH/2,x2:790,y2:186,stroke:"var(--amber)","stroke-width":2,opacity:.85},g);
+    }
+  }
+  txt(g,EX,EY-12,"router score  →","svg-lbl-sm");
+
+  // combine + output
+  el("circle",{cx:796,cy:186,r:11,fill:"var(--plate-2)",stroke:"var(--amber)","stroke-width":1.8},g);
+  txt(g,796,191,"+","svg-lbl",'middle',{fill:"var(--t-amber)","font-weight":"600"});
+  el("line",{x1:810,y1:186,x2:842,y2:186,stroke:"var(--ink-3)","stroke-width":1.4,"marker-end":"url(#arrM)"},g);
+  el("rect",{x:848,y:172,width:28,height:28,fill:"var(--tint-green)",stroke:"var(--green)","stroke-width":1.2},g);
+  txt(g,862,191,"t′","svg-lbl",'middle',{fill:"var(--t-green)"});
+  txt(g,838,222,"updated","svg-lbl-sm",'middle');
+
+  txt(g,RX,352,"The other six experts still exist and still hold parameters — they are simply not run for this token.","svg-lbl-sm");
+  txt(g,RX,366,"That is the whole trick: capacity scales with 8, cost per token scales with 2.","svg-lbl-sm");
+})();
+
+/* ============================================================
+   FIG 13 — LOAD BALANCE: COLLAPSED vs BALANCED
+   ============================================================ */
+(function figBalance(){
+  const svg=document.getElementById("fig-balance"); if(!svg) return;
+  const g=el("g",{},svg);
+  const BASE=232, TOP=58, MAXV=100, SCALE=(BASE-TOP)/MAXV;
+
+  function chart(X0,W,title,sub,vals,col,tcol,note1,note2){
+    txt(g,X0,18,title,"svg-lbl-hd");
+    txt(g,X0,34,sub,"svg-lbl-sm");
+    // axis
+    el("line",{x1:X0,y1:TOP-8,x2:X0,y2:BASE,stroke:"var(--line-2)"},g);
+    el("line",{x1:X0,y1:BASE,x2:X0+W,y2:BASE,stroke:"var(--line-2)"},g);
+    [0,25,50,75,100].forEach(function(v){
+      const y=BASE-v*SCALE;
+      el("line",{x1:X0-5,y1:y,x2:X0,y2:y,stroke:"var(--line-2)"},g);
+      txt(g,X0-9,y+4,v+"%","svg-lbl-sm",'end');
+    });
+    // even-share reference
+    const ey=BASE-25*SCALE;
+    el("line",{x1:X0,y1:ey,x2:X0+W,y2:ey,stroke:"var(--green)","stroke-width":1.4,"stroke-dasharray":"5 4",opacity:.9},g);
+    // bars
+    const bw=W/8;
+    vals.forEach(function(v,i){
+      const h=v*SCALE, x=X0+i*bw+bw*0.16, w=bw*0.68;
+      el("rect",{x:x,y:BASE-h,width:w,height:h,fill:col,"fill-opacity":v<10?.30:.85},g);
+      txt(g,x+w/2,BASE+14,String(i+1),"svg-lbl-sm",'middle');
+    });
+    txt(g,X0+W/2,BASE+30,"expert","svg-lbl-sm",'middle');
+    txt(g,X0,BASE+56,note1,"svg-lbl",null,{fill:tcol,"font-weight":"600"});
+    txt(g,X0,BASE+72,note2,"svg-lbl-sm");
+  }
+
+  chart(56,340,"COLLAPSED ROUTING","no load-balance term",
+        [95,88,6,4,3,2,1,1],"var(--verm)","var(--t-verm)",
+        "Two experts do everything.","Six are never selected, never trained — you pay for 8 and get 2.");
+  chart(516,340,"BALANCED ROUTING","load-balance loss on · weight 0.01",
+        [27,24,26,23,25,26,24,25],"var(--green)","var(--t-green)",
+        "All eight stay in use.","Every expert keeps receiving gradient, and earns its parameters.");
+
+  el("line",{x1:456,y1:10,x2:456,y2:314,stroke:"var(--line)"},g);
+  txt(g,56,50,"share of tokens each expert receives","svg-lbl-sm");
+  txt(g,516,50,"share of tokens each expert receives","svg-lbl-sm");
+  // legend for the dashed reference line
+  el("line",{x1:0,y1:326,x2:900,y2:326,stroke:"var(--line)"},g);
+  el("line",{x1:56,y1:344,x2:82,y2:344,stroke:"var(--green)","stroke-width":1.4,"stroke-dasharray":"5 4"},g);
+  txt(g,90,348,"even share — with top-2 of 8, each expert should see about 25% of tokens","svg-lbl-sm");
+})();
+
+/* ============================================================
+   FIG 14 — LAYERS vs FLUID
+   ============================================================ */
+(function figTasks(){
+  const svg=document.getElementById("fig-tasks"); if(!svg) return;
+  const g=el("g",{},svg);
+  const W=390, H=206, Y0=54, LX=22, RX=488;
+  const defs=el("defs",{},svg);
+  // every panel is clipped to its own frame so no anatomy bleeds outside the scan
+  function clipTo(id,x,y,w,h){
+    const cp=el("clipPath",{id:id},defs);
+    el("rect",{x:x,y:y,width:w,height:h},cp);
+    return el("g",{"clip-path":"url(#"+id+")"},g);
+  }
+
+  function scan(x0,id){
+    el("rect",{x:x0,y:Y0,width:W,height:H,fill:"var(--scan)"},g);
+    const inner=clipTo(id,x0,Y0,W,H);
+    const R=retina({n:130,x0:x0-4,x1:x0+W+4,bmY:Y0+150,thick:88,curve:14,fovea:.5,fw:.16});
+    choroid(inner,R,52,false);
+    drawRetina(inner,R);
+    return {R:R, inner:inner};
+  }
+  function frame(x0){
+    el("rect",{x:x0,y:Y0,width:W,height:H,fill:"none",stroke:"var(--line-2)"},g);
+  }
+
+  /* ---------------- LEFT: layers ---------------- */
+  txt(g,LX,18,"RETINAL LAYERS","svg-lbl-hd");
+  txt(g,LX,34,"ILM · ONL · EZ · RPE · BM — present in every column, always in this order","svg-lbl-sm");
+  const SA=scan(LX,"clipTasksL"), RA=SA.R, gA=SA.inner;
+  const BOUND=[[0,"var(--on-blue)","ILM"],[5,"var(--on-ink-2)","ONL"],[8,"var(--on-amber)","EZ"],
+               [10,"var(--on-verm)","RPE"],[11,"var(--on-green)","BM"]];
+  BOUND.forEach(function(b){
+    el("path",{d:linePath(RA.xs,RA.b[b[0]]),fill:"none",stroke:b[1],"stroke-width":1.8},gA);
+  });
+  // probe column
+  const pi=44, pxx=RA.xs[pi];
+  el("line",{x1:pxx,y1:Y0,x2:pxx,y2:Y0+H,stroke:"var(--on-amber)","stroke-width":1.4,"stroke-dasharray":"4 3",opacity:.85},gA);
+  BOUND.forEach(function(b){
+    el("circle",{cx:pxx,cy:RA.b[b[0]][pi],r:3.4,fill:b[1],stroke:"var(--scan)","stroke-width":1.2},gA);
+  });
+  txt(gA,pxx+7,Y0+16,"one A-scan column","on-lbl",null,{fill:"var(--on-amber)"});
+  frame(LX);
+  // readout strip
+  el("rect",{x:LX,y:Y0+H+16,width:W,height:74,fill:"var(--plate-2)",stroke:"var(--line)"},g);
+  txt(g,LX+12,Y0+H+34,"probe that column → five answers, in a known order","svg-lbl",null,{"font-weight":"600"});
+  const READ=[["ILM","var(--t-blue)"],["ONL","var(--ink-2)"],["EZ","var(--t-amber)"],
+              ["RPE","var(--t-verm)"],["RPE→BM","var(--t-green)"]];
+  const rowY=Y0+H+58;
+  ["41.2","62.7","79.4","84.1","88.6"].forEach(function(v,i){
+    const x=LX+14+i*76;
+    txt(g,x,rowY,READ[i][0].replace("RPE→BM","BM"),"svg-lbl-sm",null,{fill:READ[i][1]});
+    txt(g,x,rowY+16,v,"svg-lbl",null,{"font-weight":"600"});
+  });
+  txt(g,LX,Y0+H+112,"1-D task · no absence · no class imbalance","svg-lbl",null,{fill:"var(--t-blue)","font-weight":"600"});
+  txt(g,LX,Y0+H+128,"Useful specialisation would be by pathology, device or retinal region —","svg-lbl-sm");
+  txt(g,LX,Y0+H+142,"the same five sheets, seen under different conditions.","svg-lbl-sm");
+
+  el("line",{x1:452,y1:10,x2:452,y2:436,stroke:"var(--line)"},g);
+
+  /* ---------------- RIGHT: fluid ---------------- */
+  txt(g,RX,18,"FLUID & MATERIAL","svg-lbl-hd");
+  txt(g,RX,34,"SRF · IRF · cystic IRF · SRM · sub-RPE — variable number, or none at all","svg-lbl-sm");
+  const SB=scan(RX,"clipTasksR"), RB=SB.R, gB=SB.inner;
+  // lesions, drawn as irregular blobs
+  function blob(cx,cy,rx,ry,label,lx,ly,anchor){
+    el("ellipse",{cx:cx,cy:cy,rx:rx,ry:ry,fill:"#0F1720","fill-opacity":.94,
+      stroke:"var(--on-verm)","stroke-width":1.8},gB);
+    if(label){
+      el("line",{x1:cx,y1:cy-ry,x2:lx,y2:ly+4,stroke:"var(--on-verm)","stroke-width":.9,"stroke-dasharray":"3 2",opacity:.8},gB);
+      txt(gB,lx,ly,label,"on-lbl",anchor||"start",{fill:"var(--on-verm)"});
+    }
+  }
+  const mid=Math.round(RB.xs.length/2);
+  const rpeY=RB.b[10][mid];
+  // SRF: dome sitting on the RPE beneath the fovea
+  el("path",{d:"M"+(RX+130)+" "+(rpeY-1)+
+             " C "+(RX+150)+" "+(rpeY-34)+", "+(RX+230)+" "+(rpeY-34)+", "+(RX+250)+" "+(rpeY-1)+" Z",
+    fill:"#0F1720","fill-opacity":.94,stroke:"var(--on-verm)","stroke-width":1.8},gB);
+  txt(gB,RX+190,rpeY-40,"SRF","on-lbl",'middle',{fill:"var(--on-verm)"});
+  // IRF cysts in the inner/outer nuclear layers
+  blob(RX+118,RB.b[3][40]+8,14,10,null);
+  blob(RX+146,RB.b[3][50]+14,10,8,null);
+  blob(RX+272,RB.b[4][95]+8,17,12,"cystic IRF",RX+296,Y0+34);
+  blob(RX+300,RB.b[3][105]+6,11,8,null);
+  txt(gB,RX+96,Y0+30,"IRF","on-lbl",null,{fill:"var(--on-verm)"});
+  el("line",{x1:RX+104,y1:Y0+34,x2:RX+116,y2:RB.b[3][40]-4,stroke:"var(--on-verm)","stroke-width":.9,"stroke-dasharray":"3 2",opacity:.8},gB);
+  frame(RX);
+
+  // the adjacent, empty slice
+  const EY=Y0+H+16, EH=74;
+  el("rect",{x:RX,y:EY,width:W,height:EH,fill:"var(--scan)"},g);
+  const gE=clipTo("clipTasksE",RX,EY,W,EH);
+  const RE=retina({n:110,x0:RX-4,x1:RX+W+4,bmY:EY+56,thick:34,curve:6,fovea:.5,fw:.16});
+  choroid(gE,RE,16,false); drawRetina(gE,RE);
+  el("rect",{x:RX,y:EY,width:W,height:EH,fill:"none",stroke:"var(--green)","stroke-width":2},g);
+  txt(g,RX+8,EY+18,"the adjacent slice — nothing at all","on-lbl",null,{fill:"var(--on-green)"});
+  txt(g,RX+8,EY+EH-8,"the correct answer here is an empty mask","on-lbl",null,{fill:"var(--on-green)"});
+
+  txt(g,RX,Y0+H+112,"2-D task · presence is itself a question · severe class imbalance","svg-lbl",null,{fill:"var(--t-verm)","font-weight":"600"});
+  txt(g,RX,Y0+H+128,"Useful specialisation would be by lesion type and appearance — and the","svg-lbl-sm");
+  txt(g,RX,Y0+H+142,"model has to be able to say “nothing here” without penalty.","svg-lbl-sm");
+})();
+
+/* ============================================================
+   FIG 15 — PER-COLUMN ARGMAX: VALID FOR LAYERS, INVALID FOR FLUID
+   ============================================================ */
+(function figArgmax(){
+  const svg=document.getElementById("fig-argmax"); if(!svg) return;
+  const g=el("g",{},svg);
+  const C=22, COLS=16, ROWS=9, Y0=64;
+  const LX=30, RX=490;
+
+  function grid(X0){
+    for(let r=0;r<ROWS;r++) for(let c=0;c<COLS;c++)
+      el("rect",{x:X0+c*C,y:Y0+r*C,width:C,height:C,fill:"var(--plate-2)",
+        stroke:"var(--line)","stroke-width":.8},g);
+  }
+  function tick(x,y,col){
+    el("path",{d:"M"+(x-5)+" "+y+"l4 4l7-8",fill:"none",stroke:col,"stroke-width":2.2,
+      "stroke-linecap":"round","stroke-linejoin":"round"},g);
+  }
+
+  /* ---- LEFT: a layer ---- */
+  txt(g,LX,20,"A · PER-COLUMN ARGMAX ON A LAYER","svg-lbl-hd");
+  txt(g,LX,38,"“take the best row in this column” — always the right question","svg-lbl-sm");
+  grid(LX);
+  const rowOf=function(c){ return 3+Math.round(1.7*Math.sin(c/COLS*Math.PI*1.15)); };
+  for(let c=0;c<COLS;c++){
+    const r=rowOf(c);
+    el("rect",{x:LX+c*C+1,y:Y0+r*C+1,width:C-2,height:C-2,fill:"var(--ink)","fill-opacity":.85},g);
+    tick(LX+c*C+C/2,Y0+r*C+C/2+1,"var(--on-green)");   /* on dark truth pixels */
+  }
+  const LY=Y0+ROWS*C+30;
+  txt(g,LX,LY,"16 columns → 16 boundary positions","svg-lbl",null,{fill:"var(--t-green)","font-weight":"600"});
+  txt(g,LX,LY+17,"The layer crosses every column exactly once, so a single","svg-lbl-sm");
+  txt(g,LX,LY+31,"answer per column is not just allowed — it is required.","svg-lbl-sm");
+  txt(g,LX,LY+52,"✓ all 16 correct","svg-lbl",null,{fill:"var(--t-green)","font-weight":"600"});
+
+  el("line",{x1:452,y1:10,x2:452,y2:384,stroke:"var(--line)"},g);
+
+  /* ---- RIGHT: fluid ---- */
+  txt(g,RX,20,"B · THE SAME RULE ON A FLUID MASK","svg-lbl-hd");
+  txt(g,RX,38,"the lesion occupies 6 of 16 columns — argmax cannot say “none”","svg-lbl-sm");
+  grid(RX);
+  // the true lesion: columns 5..10, an irregular blob
+  const lo=5, hi=10;
+  const shape={5:[4,5],6:[3,6],7:[3,6],8:[3,7],9:[4,6],10:[4,5]};
+  for(let c=lo;c<=hi;c++){
+    const s=shape[c];
+    for(let r=s[0];r<=s[1];r++)
+      el("rect",{x:RX+c*C+1,y:Y0+r*C+1,width:C-2,height:C-2,fill:"var(--ink)","fill-opacity":.85},g);
+  }
+  txt(g,RX+lo*C,Y0+2*C-8,"true lesion","svg-lbl-sm",null,{fill:"var(--ink-2)"});
+  // argmax output: one pixel in EVERY column
+  for(let c=0;c<COLS;c++){
+    const inside=c>=lo&&c<=hi;
+    const r=inside?Math.round((shape[c][0]+shape[c][1])/2):(4+((c*5)%3));
+    if(inside){
+      tick(RX+c*C+C/2,Y0+r*C+C/2+1,"var(--on-green)");
+    }else{
+      el("rect",{x:RX+c*C+1,y:Y0+r*C+1,width:C-2,height:C-2,fill:"var(--verm)","fill-opacity":.28,
+        stroke:"var(--verm)","stroke-width":2,"stroke-dasharray":"3 2"},g);
+      el("path",{d:"M"+(RX+c*C+7)+" "+(Y0+r*C+7)+"l8 8M"+(RX+c*C+15)+" "+(Y0+r*C+7)+"l-8 8",
+        fill:"none",stroke:"var(--verm)","stroke-width":1.8,"stroke-linecap":"round"},g);
+    }
+  }
+  txt(g,RX,LY,"16 columns → 16 “lesions”, 10 of them invented","svg-lbl",null,{fill:"var(--t-verm)","font-weight":"600"});
+  txt(g,RX,LY+17,"Argmax has no output that means absence. Fed a column with no","svg-lbl-sm");
+  txt(g,RX,LY+31,"fluid in it, it still returns the least-bad row — a hallucinated lesion.","svg-lbl-sm");
+  txt(g,RX,LY+52,"✗ 10 of 16 hallucinated","svg-lbl",null,{fill:"var(--t-verm)","font-weight":"600"});
+
+  // key
+  const KY=LY+82;
+  el("line",{x1:0,y1:KY-20,x2:900,y2:KY-20,stroke:"var(--line)"},g);
+  el("rect",{x:LX,y:KY-11,width:15,height:15,fill:"var(--ink)","fill-opacity":.85},g);
+  txt(g,LX+23,KY+1,"ground truth","svg-lbl-sm");
+  tick(268,KY-2,"var(--green)");
+  txt(g,282,KY+1,"argmax pick, correct","svg-lbl-sm");
+  el("rect",{x:490,y:KY-11,width:15,height:15,fill:"var(--verm)","fill-opacity":.28,
+    stroke:"var(--verm)","stroke-width":2,"stroke-dasharray":"3 2"},g);
+  txt(g,513,KY+1,"argmax pick in a column that contains no lesion — hallucinated","svg-lbl-sm");
+})();
+
+/* ============================================================
+   SCROLL REVEAL
+   ============================================================ */
+(function reveal(){
+  const items=document.querySelectorAll(".rise");
+  if(!("IntersectionObserver" in window)){
+    items.forEach(function(n){n.classList.add("in");}); return;
+  }
+  const io=new IntersectionObserver(function(entries){
+    entries.forEach(function(e){ if(e.isIntersecting){ e.target.classList.add("in"); io.unobserve(e.target); } });
+  },{rootMargin:"0px 0px -8% 0px", threshold:0.04});
+  items.forEach(function(n){ io.observe(n); });
+})();
+
+})();
+</script>
+
+</body></html>
